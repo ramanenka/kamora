@@ -1,0 +1,25 @@
+[Desktop Entry]
+Type=Application
+Name=Kamora Backup
+GenericName=Backup
+Comment=Scheduled borg backups to a USB drive
+Exec=kamora
+Icon=backup
+Terminal=false
+Categories=Qt;KDE;System;Utility;Archiving;
+Keywords=backup;borg;usb;archive;
+StartupNotify=false
+X-DBUS-ServiceName=org.kamora.kamora
+X-DBUS-StartupType=Unique
+X-GNOME-UsesNotifications=true
+Actions=Configure;BackupNow;
+
+[Desktop Action Configure]
+Name=Configure backup
+Icon=configure
+Exec=kamora --configure
+
+[Desktop Action BackupNow]
+Name=Back up now
+Icon=backup
+Exec=kamora --backup-now

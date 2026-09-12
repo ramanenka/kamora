@@ -1,0 +1,24 @@
+[Global]
+IconName=backup
+Name=Kamora Backup
+Comment=Scheduled borg backups to a USB drive
+DesktopEntry=org.kamora.Backup
+
+[Event/backupDue]
+Name=Backup due
+Comment=A backup is due
+IconName=state-warning
+Action=Popup
+
+[Event/backupFinished]
+Name=Backup finished
+Comment=A backup completed successfully
+IconName=state-ok
+Action=Popup
+
+[Event/backupFailed]
+Name=Backup failed
+Comment=A backup did not finish
+IconName=state-error
+Urgency=Critical
+Action=Popup
