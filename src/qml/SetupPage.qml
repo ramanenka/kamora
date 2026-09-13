@@ -160,8 +160,16 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
             elide: Text.ElideRight
-            text: Kamora.config.driveUuid.length > 0 ? "UUID " + Kamora.config.driveUuid
-                                                     : "no drive chosen yet"
+            text: {
+                if (Kamora.config.driveUuid.length === 0) {
+                    return "no drive chosen yet";
+                }
+                if (Kamora.config.driveContainerUuid.length > 0) {
+                    return "UUID " + Kamora.config.driveUuid
+                        + ", in LUKS " + Kamora.config.driveContainerUuid;
+                }
+                return "UUID " + Kamora.config.driveUuid;
+            }
             textFormat: Text.PlainText
             opacity: 0.8
         }
@@ -194,6 +202,17 @@ Kirigami.ScrollablePage {
             type: Kirigami.MessageType.Warning
             text: "That folder is on a fixed disk rather than a removable drive. It "
                 + "works, but the drive will then always count as connected."
+        }
+
+        Kirigami.InlineMessage {
+            Kirigami.FormData.isSection: true
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            visible: page.lastPick !== null && page.lastPick.found && page.lastPick.encrypted
+            type: Kirigami.MessageType.Information
+            text: "That drive is encrypted. Kamora remembers it by its LUKS header as "
+                + "well, so it is recognised while still locked, and asks for the "
+                + "passphrase when a backup needs it."
         }
 
         Kirigami.InlineMessage {

@@ -21,6 +21,9 @@ class BackupConfig : public QObject
     Q_PROPERTY(bool configured READ configured WRITE setConfigured NOTIFY changed)
 
     Q_PROPERTY(QString driveUuid READ driveUuid WRITE setDriveUuid NOTIFY changed)
+    Q_PROPERTY(QString driveContainerUuid READ driveContainerUuid WRITE setDriveContainerUuid
+                   NOTIFY changed)
+    Q_PROPERTY(QString borgRepoId READ borgRepoId WRITE setBorgRepoId NOTIFY changed)
     Q_PROPERTY(QString driveLabel READ driveLabel WRITE setDriveLabel NOTIFY changed)
     Q_PROPERTY(QString driveDisplay READ driveDisplay WRITE setDriveDisplay NOTIFY changed)
     Q_PROPERTY(QString driveDevice READ driveDevice WRITE setDriveDevice NOTIFY changed)
@@ -54,6 +57,20 @@ public:
 
     QString driveUuid() const;
     void setDriveUuid(const QString &value);
+
+    /// UUID of the LUKS header, empty when the drive is not encrypted. It is
+    /// what identifies the drive while it is still locked.
+    QString driveContainerUuid() const;
+    void setDriveContainerUuid(const QString &value);
+
+    /**
+     * The id borg generated for the repository, from its "config" file. Empty
+     * until the first run against a repository, then compared before every
+     * backup so a different repository at the configured path is refused
+     * rather than written to.
+     */
+    QString borgRepoId() const;
+    void setBorgRepoId(const QString &value);
     QString driveLabel() const;
     void setDriveLabel(const QString &value);
     QString driveDisplay() const;
@@ -97,7 +114,11 @@ public:
     /// Records the outcome of a run and saves it right away.
     void recordRun(const QString &status, const QString &archive, const QString &error);
 
-    /// Key under which the repository passphrase is stored.
+    /**
+     * Key under which the repository passphrase is stored. Kamora's own
+     * identifier for the configured repository - unrelated to borgRepoId(),
+     * which is the id borg itself keeps inside the repository.
+     */
     Q_INVOKABLE QString repoId() const;
 
     /// Editing helpers used by the setup page.
@@ -123,6 +144,8 @@ private:
     struct Settings {
         bool configured = false;
         QString driveUuid;
+        QString driveContainerUuid;
+        QString borgRepoId;
         QString driveLabel;
         QString driveDisplay;
         QString driveDevice;

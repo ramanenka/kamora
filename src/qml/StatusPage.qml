@@ -45,6 +45,23 @@ Kirigami.ScrollablePage {
             text: "borg is not installed, so no backup can run. Install the borgbackup package."
         }
 
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: Kamora.drives.targetFilesystemChanged
+            type: Kirigami.MessageType.Warning
+            text: "This is the drive you configured, but it holds a different filesystem "
+                + "than it did then - it has been reformatted or restored. If the "
+                + "repository is not there any more, the next backup starts a new one "
+                + "and the old archives are not part of it."
+            actions: [
+                Kirigami.Action {
+                    text: "Reconfigure"
+                    icon.name: "configure"
+                    onTriggered: Kamora.requestConfigure()
+                }
+            ]
+        }
+
         Kirigami.AbstractCard {
             Layout.fillWidth: true
 
@@ -141,7 +158,8 @@ Kirigami.ScrollablePage {
                 Layout.maximumWidth: page.fieldWidth
 
                 Kirigami.Icon {
-                    source: Kamora.drives.targetPresent ? "media-mount" : "media-eject"
+                    source: !Kamora.drives.targetPresent ? "media-eject"
+                        : (Kamora.drives.targetLocked ? "lock" : "media-mount")
                     implicitWidth: Kirigami.Units.iconSizes.small
                     implicitHeight: Kirigami.Units.iconSizes.small
                 }
@@ -150,9 +168,17 @@ Kirigami.ScrollablePage {
                     Layout.fillWidth: true
                     Layout.preferredWidth: Kirigami.Units.gridUnit * 12
                     elide: Text.ElideMiddle
-                    text: !Kamora.drives.targetPresent ? "not connected"
-                        : (Kamora.drives.targetMounted ? "connected, mounted at " + Kamora.drives.targetMountPoint
-                                                       : "connected, not mounted")
+                    text: {
+                        if (!Kamora.drives.targetPresent) {
+                            return "not connected";
+                        }
+                        if (Kamora.drives.targetLocked) {
+                            return "connected, locked";
+                        }
+                        return Kamora.drives.targetMounted
+                            ? "connected, mounted at " + Kamora.drives.targetMountPoint
+                            : "connected, not mounted";
+                    }
                     textFormat: Text.PlainText
                 }
             }
@@ -180,15 +206,15 @@ Kirigami.ScrollablePage {
 
             RowLayout {
                 QQC2.Button {
-                    text: "Mount"
-                    icon.name: "media-mount"
+                    text: Kamora.drives.targetLocked ? "Unlock and mount" : "Mount"
+                    icon.name: Kamora.drives.targetLocked ? "unlock" : "media-mount"
                     visible: Kamora.drives.targetPresent && !Kamora.drives.targetMounted
                     enabled: !Kamora.drives.busy
                     onClicked: Kamora.mountDrive()
                 }
 
                 QQC2.Button {
-                    text: "Unmount"
+                    text: Kamora.config.driveContainerUuid.length > 0 ? "Unmount and lock" : "Unmount"
                     icon.name: "media-eject"
                     visible: Kamora.drives.targetMounted
                     enabled: !Kamora.drives.busy && !Kamora.runner.running

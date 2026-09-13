@@ -12,6 +12,8 @@
 #include <QUrl>
 #include <QWindow>
 
+#include <KConfig>
+#include <KConfigGroup>
 #include <KFormat>
 #include <KLocalizedString>
 #include <KNotification>
@@ -22,6 +24,21 @@
 #include "passphrasestore.h"
 
 using namespace Qt::StringLiterals;
+
+namespace
+{
+// borg stores the repository id unencrypted in the repository's "config" file,
+// so it can be checked without the passphrase and without running borg.
+QString readBorgRepositoryId(const QString &repository)
+{
+    const QString file = QDir(repository).filePath(u"config"_s);
+    if (!QFileInfo::exists(file)) {
+        return QString();
+    }
+    KConfig config(file, KConfig::SimpleConfig);
+    return config.group(u"repository"_s).readEntry("id", QString());
+}
+}
 
 namespace
 {
@@ -46,9 +63,11 @@ BackupController::BackupController(QObject *parent)
     , m_tray(new TrayIcon(this))
 {
     m_drives->setTargetUuid(m_config->driveUuid());
+    m_drives->setTargetContainerUuid(m_config->driveContainerUuid());
 
     connect(m_config, &BackupConfig::changed, this, [this]() {
         m_drives->setTargetUuid(m_config->driveUuid());
+        m_drives->setTargetContainerUuid(m_config->driveContainerUuid());
         evaluate();
     });
 
@@ -431,6 +450,37 @@ void BackupController::beginBackup()
         environment.insert(u"BORG_PASSPHRASE"_s, passphrase);
     }
 
+    // A repository that is not the configured one must not be written to, and
+    // a missing one must not be silently replaced with an empty repository.
+    const QString expectedId = m_config->borgRepoId();
+    if (!expectedId.isEmpty()) {
+        const QString actualId = readBorgRepositoryId(repository);
+        if (actualId.isEmpty()) {
+            const QString why =
+                i18n("The backup repository is no longer at %1. Nothing was backed up, so the "
+                     "existing archives are not replaced by an empty repository. Check the "
+                     "drive, or set the repository up again to start a new one.",
+                     repository);
+            appendLog(why);
+            m_config->recordRun(u"failed"_s, QString(), why);
+            Q_EMIT message(why, true);
+            evaluate();
+            return;
+        }
+        if (actualId != expectedId) {
+            const QString why =
+                i18n("The repository at %1 is a different one than Kamora was set up with. "
+                     "Nothing was backed up. Set the repository up again if this is the one "
+                     "you want to use now.",
+                     repository);
+            appendLog(why);
+            m_config->recordRun(u"failed"_s, QString(), why);
+            Q_EMIT message(why, true);
+            evaluate();
+            return;
+        }
+    }
+
     QList<BorgStep> steps;
 
     const bool repositoryExists = QFileInfo::exists(QDir(repository).filePath(u"config"_s));
@@ -493,6 +543,16 @@ void BackupController::onRunFinished(bool ok, const QString &text, const QString
     appendLog(text);
     m_config->recordRun(ok ? u"ok"_s : u"failed"_s, archiveName, ok ? QString() : text);
 
+    if (ok && m_config->borgRepoId().isEmpty()) {
+        // First run against this repository: remember what borg calls it.
+        const QString id = readBorgRepositoryId(repositoryPath());
+        if (!id.isEmpty()) {
+            m_config->setBorgRepoId(id);
+            m_config->save();
+            appendLog(i18n("Repository identified as %1", id));
+        }
+    }
+
     if (ok) {
         notify(u"backupFinished"_s, i18n("Backup finished"),
                archiveName.isEmpty() ? text : i18n("Created archive %1", archiveName));
@@ -517,7 +577,11 @@ QVariantMap BackupController::selectRepositoryFolder(const QUrl &folder)
         return resolved;
     }
 
+    // A different folder or drive is a different repository; the id is learned
+    // again on the next successful run.
+    m_config->setBorgRepoId(QString());
     m_config->setDriveUuid(resolved.value(u"uuid"_s).toString());
+    m_config->setDriveContainerUuid(resolved.value(u"containerUuid"_s).toString());
     m_config->setDriveLabel(resolved.value(u"label"_s).toString());
     m_config->setDriveDisplay(resolved.value(u"display"_s).toString());
     m_config->setDriveDevice(resolved.value(u"device"_s).toString());
@@ -534,6 +598,7 @@ void BackupController::saveConfiguration(const QString &passphrase)
         }
     }
     m_drives->setTargetUuid(m_config->driveUuid());
+    m_drives->setTargetContainerUuid(m_config->driveContainerUuid());
     applyAutostart();
     appendLog(i18n("Configuration saved"));
     evaluate();

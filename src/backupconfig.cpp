@@ -57,6 +57,26 @@ void BackupConfig::setDriveUuid(const QString &value)
     assign(m_settings.driveUuid, value);
 }
 
+QString BackupConfig::driveContainerUuid() const
+{
+    return m_settings.driveContainerUuid;
+}
+
+void BackupConfig::setDriveContainerUuid(const QString &value)
+{
+    assign(m_settings.driveContainerUuid, value);
+}
+
+QString BackupConfig::borgRepoId() const
+{
+    return m_settings.borgRepoId;
+}
+
+void BackupConfig::setBorgRepoId(const QString &value)
+{
+    assign(m_settings.borgRepoId, value);
+}
+
 QString BackupConfig::driveLabel() const
 {
     return m_settings.driveLabel;
@@ -324,6 +344,9 @@ void BackupConfig::load()
     const KConfigGroup group = m_config->group(u"Backup"_s);
     m_settings.configured = group.readEntry("Configured", m_settings.configured);
     m_settings.driveUuid = group.readEntry("DriveUuid", m_settings.driveUuid);
+    m_settings.driveContainerUuid =
+        group.readEntry("DriveContainerUuid", m_settings.driveContainerUuid);
+    m_settings.borgRepoId = group.readEntry("BorgRepoId", m_settings.borgRepoId);
     m_settings.driveLabel = group.readEntry("DriveLabel", m_settings.driveLabel);
     m_settings.driveDisplay = group.readEntry("DriveDisplay", m_settings.driveDisplay);
     m_settings.driveDevice = group.readEntry("DriveDevice", m_settings.driveDevice);
@@ -354,6 +377,8 @@ void BackupConfig::save()
     KConfigGroup group = m_config->group(u"Backup"_s);
     group.writeEntry("Configured", m_settings.configured);
     group.writeEntry("DriveUuid", m_settings.driveUuid);
+    group.writeEntry("DriveContainerUuid", m_settings.driveContainerUuid);
+    group.writeEntry("BorgRepoId", m_settings.borgRepoId);
     group.writeEntry("DriveLabel", m_settings.driveLabel);
     group.writeEntry("DriveDisplay", m_settings.driveDisplay);
     group.writeEntry("DriveDevice", m_settings.driveDevice);
