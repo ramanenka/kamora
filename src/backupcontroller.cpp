@@ -194,6 +194,23 @@ bool BackupController::repositoryExists() const
     return !repository.isEmpty() && QFileInfo::exists(QDir(repository).filePath(u"config"_s));
 }
 
+QUrl BackupController::browseStartFolder() const
+{
+    const QString mountPoint = m_drives->targetMountPoint();
+    if (!mountPoint.isEmpty()) {
+        return QUrl::fromLocalFile(mountPoint);
+    }
+    // Removable media land here on this distribution; fall back to the home
+    // directory when nothing is mounted.
+    for (const QString &base : {u"/run/media/"_s, u"/media/"_s}) {
+        const QString candidate = base + QDir::home().dirName();
+        if (QFileInfo::exists(candidate)) {
+            return QUrl::fromLocalFile(candidate);
+        }
+    }
+    return QUrl::fromLocalFile(QDir::homePath());
+}
+
 QString BackupController::headline() const
 {
     if (m_runner->running()) {
@@ -492,12 +509,20 @@ void BackupController::onRunFinished(bool ok, const QString &text, const QString
     }
 }
 
-void BackupController::selectDrive(const QVariantMap &drive)
+QVariantMap BackupController::selectRepositoryFolder(const QUrl &folder)
 {
-    m_config->setDriveUuid(drive.value(u"uuid"_s).toString());
-    m_config->setDriveLabel(drive.value(u"label"_s).toString());
-    m_config->setDriveDisplay(drive.value(u"display"_s).toString());
-    m_config->setDriveDevice(drive.value(u"device"_s).toString());
+    const QVariantMap resolved = m_drives->resolvePath(folder);
+    if (!resolved.value(u"found"_s).toBool()) {
+        Q_EMIT message(i18n("That folder is not on a mounted drive"), true);
+        return resolved;
+    }
+
+    m_config->setDriveUuid(resolved.value(u"uuid"_s).toString());
+    m_config->setDriveLabel(resolved.value(u"label"_s).toString());
+    m_config->setDriveDisplay(resolved.value(u"display"_s).toString());
+    m_config->setDriveDevice(resolved.value(u"device"_s).toString());
+    m_config->setRepoPath(resolved.value(u"relativePath"_s).toString());
+    return resolved;
 }
 
 void BackupController::saveConfiguration(const QString &passphrase)

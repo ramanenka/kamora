@@ -126,7 +126,7 @@ private:
         QString driveLabel;
         QString driveDisplay;
         QString driveDevice;
-        QString repoPath = QStringLiteral("kamora-borg-repo");
+        QString repoPath;
         QString encryption = QStringLiteral("none");
         QString compression = QStringLiteral("zstd");
         QStringList includePaths;

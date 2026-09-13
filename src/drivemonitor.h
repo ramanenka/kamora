@@ -1,7 +1,8 @@
 #pragma once
 
 #include <QObject>
-#include <QVariantList>
+#include <QUrl>
+#include <QVariantMap>
 
 #include <Solid/Device>
 
@@ -15,9 +16,6 @@ class DriveMonitor : public QObject
 {
     Q_OBJECT
 
-    Q_PROPERTY(QVariantList availableDrives READ availableDrives NOTIFY availableDrivesChanged)
-    Q_PROPERTY(bool showAllDrives READ showAllDrives WRITE setShowAllDrives NOTIFY availableDrivesChanged)
-
     Q_PROPERTY(QString targetUuid READ targetUuid WRITE setTargetUuid NOTIFY targetChanged)
     Q_PROPERTY(bool targetPresent READ targetPresent NOTIFY targetChanged)
     Q_PROPERTY(bool targetMounted READ targetMounted NOTIFY targetChanged)
@@ -26,11 +24,6 @@ class DriveMonitor : public QObject
 
 public:
     explicit DriveMonitor(QObject *parent = nullptr);
-
-    QVariantList availableDrives() const;
-
-    bool showAllDrives() const;
-    void setShowAllDrives(bool value);
 
     QString targetUuid() const;
     void setTargetUuid(const QString &uuid);
@@ -43,6 +36,16 @@ public:
     /// Rescans the currently attached storage devices.
     Q_INVOKABLE void refresh();
 
+    /**
+     * Works out which volume a folder lives on.
+     *
+     * Returns the description of that volume plus "relativePath", the part of
+     * the folder below the volume's mount point - the pair Kamora stores, so
+     * that the repository is found again wherever the drive turns up next.
+     * "found" is false when the folder is not on any mounted volume.
+     */
+    Q_INVOKABLE QVariantMap resolvePath(const QUrl &folder) const;
+
     /// Mounts the configured drive; emits mountFinished() when done.
     Q_INVOKABLE void mountTarget();
 
@@ -50,7 +53,6 @@ public:
     Q_INVOKABLE void unmountTarget();
 
 Q_SIGNALS:
-    void availableDrivesChanged();
     void targetChanged();
     void targetAppeared();
     void targetVanished();
@@ -66,9 +68,7 @@ private:
     static QVariantMap describe(const Solid::Device &device);
     static bool isRemovableStorage(const Solid::Device &device);
 
-    QVariantList m_drives;
     QString m_targetUuid;
-    bool m_showAllDrives = false;
     bool m_targetPresent = false;
     bool m_busy = false;
     Solid::Device m_target;

@@ -25,6 +25,7 @@ ColumnLayout {
 
     QQC2.Label {
         Layout.fillWidth: true
+        Layout.preferredWidth: Kirigami.Units.gridUnit * 12
         visible: editor.entries.length === 0
         text: editor.emptyText
         opacity: 0.7
@@ -51,6 +52,9 @@ ColumnLayout {
 
             QQC2.Label {
                 Layout.fillWidth: true
+                // Without a preferred width the full path would be the row's
+                // implicit width, which widens every layout above it.
+                Layout.preferredWidth: Kirigami.Units.gridUnit * 12
                 text: row.modelData
                 elide: Text.ElideMiddle
                 textFormat: Text.PlainText

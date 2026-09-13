@@ -262,9 +262,6 @@ void BackupConfig::commit()
     while (m_settings.repoPath.startsWith(u'/')) {
         m_settings.repoPath.remove(0, 1);
     }
-    if (m_settings.repoPath.isEmpty()) {
-        m_settings.repoPath = u"kamora-borg-repo"_s;
-    }
     m_settings.configured = !m_settings.driveUuid.isEmpty() && !m_settings.includePaths.isEmpty();
     save();
 }

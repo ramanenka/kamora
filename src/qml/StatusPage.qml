@@ -9,6 +9,9 @@ Kirigami.ScrollablePage {
 
     title: "Kamora Backup"
 
+    // See SetupPage: a form is only as narrow as its widest child allows.
+    readonly property int fieldWidth: Kirigami.Units.gridUnit * 24
+
     actions: [
         Kirigami.Action {
             text: Kamora.runner.running ? "Cancel" : "Back up now"
@@ -71,6 +74,7 @@ Kirigami.ScrollablePage {
 
                         QQC2.Label {
                             Layout.fillWidth: true
+                            Layout.preferredWidth: Kirigami.Units.gridUnit * 12
                             text: Kamora.subtitle
                             wrapMode: Text.Wrap
                             elide: Text.ElideMiddle
@@ -123,6 +127,7 @@ Kirigami.ScrollablePage {
 
             QQC2.Label {
                 Kirigami.FormData.label: "Drive:"
+                Layout.maximumWidth: page.fieldWidth
                 text: Kamora.config.driveDisplay.length > 0 ? Kamora.config.driveDisplay
                                                             : Kamora.config.driveUuid
                 textFormat: Text.PlainText
@@ -132,6 +137,8 @@ Kirigami.ScrollablePage {
 
             RowLayout {
                 Kirigami.FormData.label: "State:"
+                Layout.fillWidth: true
+                Layout.maximumWidth: page.fieldWidth
 
                 Kirigami.Icon {
                     source: Kamora.drives.targetPresent ? "media-mount" : "media-eject"
@@ -140,6 +147,9 @@ Kirigami.ScrollablePage {
                 }
 
                 QQC2.Label {
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 12
+                    elide: Text.ElideMiddle
                     text: !Kamora.drives.targetPresent ? "not connected"
                         : (Kamora.drives.targetMounted ? "connected, mounted at " + Kamora.drives.targetMountPoint
                                                        : "connected, not mounted")
@@ -149,12 +159,20 @@ Kirigami.ScrollablePage {
 
             RowLayout {
                 Kirigami.FormData.label: "Repository:"
+                Layout.fillWidth: true
+                Layout.maximumWidth: page.fieldWidth
 
                 QQC2.Label {
                     Layout.fillWidth: true
-                    text: Kamora.repositoryPath.length > 0
-                        ? Kamora.repositoryPath
-                        : Kamora.config.repoPath + " (on the drive)"
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 12
+                    text: {
+                        if (Kamora.repositoryPath.length > 0) {
+                            return Kamora.repositoryPath;
+                        }
+                        return Kamora.config.repoPath.length > 0
+                            ? Kamora.config.repoPath + " (on the drive)"
+                            : "the top level of the drive";
+                    }
                     textFormat: Text.PlainText
                     elide: Text.ElideMiddle
                 }
@@ -241,6 +259,7 @@ Kirigami.ScrollablePage {
 
                 QQC2.Label {
                     Layout.fillWidth: true
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 12
                     text: archiveRow.modelData.name
                     textFormat: Text.PlainText
                     elide: Text.ElideMiddle

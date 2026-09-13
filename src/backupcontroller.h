@@ -34,6 +34,7 @@ class BackupController : public QObject
     Q_PROPERTY(QString nextBackupText READ nextBackupText NOTIFY statusChanged)
     Q_PROPERTY(QString repositoryPath READ repositoryPath NOTIFY statusChanged)
     Q_PROPERTY(bool repositoryExists READ repositoryExists NOTIFY statusChanged)
+    Q_PROPERTY(QUrl browseStartFolder READ browseStartFolder NOTIFY statusChanged)
     Q_PROPERTY(bool canBackupNow READ canBackupNow NOTIFY statusChanged)
     Q_PROPERTY(bool borgAvailable READ borgAvailable CONSTANT)
     Q_PROPERTY(QString logText READ logText NOTIFY logChanged)
@@ -55,6 +56,8 @@ public:
     QString repositoryPath() const;
     /// Whether a borg repository is already present on the mounted drive.
     bool repositoryExists() const;
+    /// Where the folder dialog should open.
+    QUrl browseStartFolder() const;
     bool canBackupNow() const;
     bool borgAvailable() const;
     QString logText() const;
@@ -66,8 +69,14 @@ public:
     Q_INVOKABLE void startBackup();
     Q_INVOKABLE void cancelBackup();
 
-    /// Copies a drive entry from DriveMonitor::availableDrives into the config.
-    Q_INVOKABLE void selectDrive(const QVariantMap &drive);
+    /**
+     * Takes the folder the user picked for the repository and stores it as the
+     * UUID of the drive it is on plus the path relative to that drive.
+     *
+     * Returns the resolution so the page can explain what was picked, or why
+     * the folder is not usable.
+     */
+    Q_INVOKABLE QVariantMap selectRepositoryFolder(const QUrl &folder);
 
     /// Commits the setup page; an empty passphrase leaves the stored one alone.
     Q_INVOKABLE void saveConfiguration(const QString &passphrase);

@@ -1,5 +1,6 @@
 #include "drivemonitor.h"
 
+#include <QDir>
 #include <QLocale>
 
 #include <KLocalizedString>
@@ -56,25 +57,6 @@ DriveMonitor::DriveMonitor(QObject *parent)
     auto *notifier = Solid::DeviceNotifier::instance();
     connect(notifier, &Solid::DeviceNotifier::deviceAdded, this, &DriveMonitor::onDeviceAdded);
     connect(notifier, &Solid::DeviceNotifier::deviceRemoved, this, &DriveMonitor::onDeviceRemoved);
-    refresh();
-}
-
-QVariantList DriveMonitor::availableDrives() const
-{
-    return m_drives;
-}
-
-bool DriveMonitor::showAllDrives() const
-{
-    return m_showAllDrives;
-}
-
-void DriveMonitor::setShowAllDrives(bool value)
-{
-    if (m_showAllDrives == value) {
-        return;
-    }
-    m_showAllDrives = value;
     refresh();
 }
 
@@ -155,7 +137,7 @@ QVariantMap DriveMonitor::describe(const Solid::Device &device)
     const QString sizeText = size > 0 ? QLocale().formattedDataSize(size) : QString();
 
     QString display = name;
-    if (!label.isEmpty()) {
+    if (!label.isEmpty() && label != name) {
         display += u" — "_s + label;
     }
     if (!sizeText.isEmpty()) {
@@ -191,29 +173,69 @@ Solid::Device DriveMonitor::findTargetDevice() const
     return Solid::Device();
 }
 
-void DriveMonitor::refresh()
+namespace
 {
-    QVariantList drives;
+bool pathIsWithin(const QString &path, const QString &root)
+{
+    if (root == u"/"_s) {
+        return path.startsWith(u'/');
+    }
+    return path == root || path.startsWith(root + u'/');
+}
+}
+
+QVariantMap DriveMonitor::resolvePath(const QUrl &folder) const
+{
+    const QString path =
+        QDir::cleanPath(folder.isLocalFile() ? folder.toLocalFile() : folder.toString());
+
+    QVariantMap result;
+    result.insert(u"found"_s, false);
+    result.insert(u"path"_s, path);
+    if (!path.startsWith(u'/')) {
+        return result;
+    }
+
+    // The deepest mount point containing the folder is the volume it is on:
+    // /home beats / for a folder below /home.
+    Solid::Device volumeDevice;
+    QString volumeMountPoint;
     const auto devices = Solid::Device::listFromType(Solid::DeviceInterface::StorageAccess);
     for (const Solid::Device &device : devices) {
+        const auto *access = device.as<Solid::StorageAccess>();
         const auto *volume = device.as<Solid::StorageVolume>();
-        if (!volume || volume->isIgnored() || volume->uuid().isEmpty()) {
+        if (!access || !access->isAccessible() || !volume || volume->uuid().isEmpty()) {
             continue;
         }
-        if (volume->usage() != Solid::StorageVolume::FileSystem) {
+        const QString mountPoint = QDir::cleanPath(access->filePath());
+        if (mountPoint.isEmpty() || !pathIsWithin(path, mountPoint)) {
             continue;
         }
-        if (!m_showAllDrives && !isRemovableStorage(device)) {
-            continue;
+        if (!volumeDevice.isValid() || mountPoint.length() > volumeMountPoint.length()) {
+            volumeDevice = device;
+            volumeMountPoint = mountPoint;
         }
-        drives.append(describe(device));
     }
 
-    if (drives != m_drives) {
-        m_drives = drives;
-        Q_EMIT availableDrivesChanged();
+    if (!volumeDevice.isValid()) {
+        return result;
     }
 
+    QString relative = path.mid(volumeMountPoint.length());
+    while (relative.startsWith(u'/')) {
+        relative.remove(0, 1);
+    }
+
+    result = describe(volumeDevice);
+    result.insert(u"found"_s, true);
+    result.insert(u"path"_s, path);
+    result.insert(u"mountPoint"_s, volumeMountPoint);
+    result.insert(u"relativePath"_s, relative);
+    return result;
+}
+
+void DriveMonitor::refresh()
+{
     const Solid::Device target = findTargetDevice();
     const bool present = target.isValid();
     const bool wasPresent = m_targetPresent;

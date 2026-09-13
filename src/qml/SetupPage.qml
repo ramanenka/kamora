@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
+import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
 import org.kamora.backup
 
@@ -13,18 +14,16 @@ Kirigami.ScrollablePage {
     readonly property bool passphraseOk: !encrypted
         || (passphraseField.text.length === 0 && confirmField.text.length === 0)
         || passphraseField.text === confirmField.text
-    readonly property bool driveKnown: driveCombo.currentIndex >= 0 || Kamora.config.driveUuid.length > 0
-    readonly property bool canSave: driveKnown && Kamora.config.includePaths.length > 0 && passphraseOk
+    readonly property bool canSave: Kamora.config.driveUuid.length > 0
+        && Kamora.config.includePaths.length > 0 && passphraseOk
 
-    function driveIndex(): int {
-        const drives = Kamora.drives.availableDrives;
-        for (let i = 0; i < drives.length; ++i) {
-            if (drives[i].uuid === Kamora.config.driveUuid) {
-                return i;
-            }
-        }
-        return -1;
-    }
+    /// Result of the last folder pick, used for the notes below the picker.
+    property var lastPick: null
+
+    // Kirigami.FormLayout takes its width from the widest child's implicit
+    // width, so anything holding long text has to be capped or it pushes the
+    // whole form past the edge of the window.
+    readonly property int fieldWidth: Kirigami.Units.gridUnit * 24
 
     actions: [
         Kirigami.Action {
@@ -57,6 +56,15 @@ Kirigami.ScrollablePage {
         }
     ]
 
+    FolderDialog {
+        id: repositoryDialog
+
+        title: "Choose the borg repository folder on the drive"
+        currentFolder: Kamora.browseStartFolder
+
+        onAccepted: page.lastPick = Kamora.selectRepositoryFolder(selectedFolder)
+    }
+
     Kirigami.PromptDialog {
         id: forgetDialog
 
@@ -86,6 +94,7 @@ Kirigami.ScrollablePage {
         Kirigami.InlineMessage {
             Kirigami.FormData.isSection: true
             Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
             visible: !Kamora.borgAvailable
             type: Kirigami.MessageType.Warning
             text: "borg is not installed. Install the borgbackup package, otherwise "
@@ -93,90 +102,118 @@ Kirigami.ScrollablePage {
         }
 
         Kirigami.Separator {
-            Kirigami.FormData.label: "Backup drive"
+            Kirigami.FormData.label: "Repository"
             Kirigami.FormData.isSection: true
         }
 
-        RowLayout {
-            Kirigami.FormData.label: "Drive:"
+        QQC2.Label {
+            Kirigami.FormData.label: "Folder:"
             Layout.fillWidth: true
-
-            QQC2.ComboBox {
-                id: driveCombo
-
-                Layout.fillWidth: true
-                model: Kamora.drives.availableDrives
-                textRole: "display"
-                currentIndex: page.driveIndex()
-                displayText: {
-                    if (currentIndex >= 0) {
-                        return currentText;
-                    }
-                    if (Kamora.config.driveDisplay.length === 0) {
-                        return "Select a drive…";
-                    }
-                    // Configured but missing from the list: either unplugged,
-                    // or a fixed disk while only removable ones are listed.
-                    return Kamora.config.driveDisplay
-                        + (Kamora.drives.targetPresent ? " (connected)" : " (not connected)");
+            Layout.maximumWidth: page.fieldWidth
+            text: {
+                if (Kamora.config.driveUuid.length === 0) {
+                    return "Not chosen yet";
                 }
+                return Kamora.config.repoPath.length > 0
+                    ? Kamora.config.repoPath
+                    : "the top level of the drive";
+            }
+            textFormat: Text.PlainText
+            elide: Text.ElideMiddle
+        }
 
-                onActivated: index => Kamora.selectDrive(Kamora.drives.availableDrives[index])
+        RowLayout {
+            spacing: Kirigami.Units.smallSpacing
+
+            QQC2.Button {
+                text: Kamora.config.driveUuid.length > 0 ? "Change…" : "Choose folder…"
+                icon.name: "folder-open"
+                onClicked: repositoryDialog.open()
             }
 
-            QQC2.ToolButton {
-                icon.name: "view-refresh"
-                text: "Rescan"
-                display: QQC2.AbstractButton.IconOnly
-                onClicked: Kamora.drives.refresh()
-
-                QQC2.ToolTip.text: text
-                QQC2.ToolTip.visible: hovered
-                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+            QQC2.Button {
+                text: "Mount drive"
+                icon.name: "media-mount"
+                visible: Kamora.drives.targetPresent && !Kamora.drives.targetMounted
+                enabled: !Kamora.drives.busy
+                onClicked: Kamora.mountDrive()
             }
         }
 
-        QQC2.CheckBox {
-            text: "Also list drives that are not removable"
-            checked: Kamora.drives.showAllDrives
-            onToggled: Kamora.drives.showAllDrives = checked
+        QQC2.Label {
+            Kirigami.FormData.label: "On drive:"
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            text: {
+                if (Kamora.config.driveDisplay.length === 0) {
+                    return "—";
+                }
+                return Kamora.config.driveDisplay
+                    + (Kamora.drives.targetPresent ? " (connected)" : " (not connected)");
+            }
+            textFormat: Text.PlainText
+            elide: Text.ElideMiddle
         }
 
         QQC2.Label {
             Kirigami.FormData.label: "Identified by:"
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            elide: Text.ElideRight
             text: Kamora.config.driveUuid.length > 0 ? "UUID " + Kamora.config.driveUuid
-                                                     : "no drive selected yet"
+                                                     : "no drive chosen yet"
             textFormat: Text.PlainText
             opacity: 0.8
+        }
+
+        QQC2.Label {
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            text: "Pick the folder on the drive itself. Kamora stores the drive's UUID "
+                + "and the path within it, so the repository is found again whatever "
+                + "device node or mount point the drive gets next time."
+            opacity: 0.7
+            wrapMode: Text.Wrap
         }
 
         Kirigami.InlineMessage {
             Kirigami.FormData.isSection: true
             Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            visible: page.lastPick !== null && !page.lastPick.found
+            type: Kirigami.MessageType.Error
+            text: "That folder is not on a mounted drive, so there is no drive to "
+                + "remember it by."
+        }
+
+        Kirigami.InlineMessage {
+            Kirigami.FormData.isSection: true
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            visible: page.lastPick !== null && page.lastPick.found && !page.lastPick.removable
+            type: Kirigami.MessageType.Warning
+            text: "That folder is on a fixed disk rather than a removable drive. It "
+                + "works, but the drive will then always count as connected."
+        }
+
+        Kirigami.InlineMessage {
+            Kirigami.FormData.isSection: true
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            visible: Kamora.config.driveUuid.length > 0 && Kamora.config.repoPath.length === 0
+            type: Kirigami.MessageType.Warning
+            text: "That is the top level of the drive. borg needs a directory of its "
+                + "own, so pick or create a subfolder unless the drive is empty."
+        }
+
+        Kirigami.InlineMessage {
+            Kirigami.FormData.isSection: true
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
             visible: Kamora.config.driveUuid.length > 0 && !Kamora.drives.targetPresent
             type: Kirigami.MessageType.Information
-            text: "The configured drive is not connected right now. It stays selected "
-                + "and Kamora will recognise it by its UUID when you plug it in."
-        }
-
-        Kirigami.Separator {
-            Kirigami.FormData.label: "Repository"
-            Kirigami.FormData.isSection: true
-        }
-
-        QQC2.TextField {
-            Kirigami.FormData.label: "Path on the drive:"
-            Layout.fillWidth: true
-            text: Kamora.config.repoPath
-            placeholderText: "kamora-borg-repo"
-            onTextEdited: Kamora.config.repoPath = text
-        }
-
-        QQC2.Label {
-            text: "The borg repository is created there on the first backup."
-            opacity: 0.7
-            wrapMode: Text.Wrap
-            Layout.fillWidth: true
+            text: "The drive is not connected right now. The choice stays as it is and "
+                + "Kamora will recognise the drive by its UUID when you plug it in."
         }
 
         QQC2.ComboBox {
@@ -186,6 +223,7 @@ Kirigami.ScrollablePage {
 
             Kirigami.FormData.label: "Encryption:"
             Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
             model: ["None — the drive is trusted", "Encrypted with a passphrase"]
             currentIndex: Math.max(0, keys.indexOf(Kamora.config.encryption))
             onActivated: index => Kamora.config.encryption = keys[index]
@@ -196,6 +234,7 @@ Kirigami.ScrollablePage {
 
             Kirigami.FormData.label: "Passphrase:"
             Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
             visible: page.encrypted
             echoMode: TextInput.Password
             placeholderText: Kamora.config.configured ? "leave empty to keep the stored one" : ""
@@ -206,11 +245,15 @@ Kirigami.ScrollablePage {
 
             Kirigami.FormData.label: "Repeat passphrase:"
             Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
             visible: page.encrypted
             echoMode: TextInput.Password
         }
 
         QQC2.Label {
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            wrapMode: Text.Wrap
             visible: page.encrypted
             text: page.passphraseOk ? "Stored in KWallet."
                                     : "The two passphrases do not match."
@@ -221,6 +264,7 @@ Kirigami.ScrollablePage {
         QQC2.ComboBox {
             Kirigami.FormData.label: "Compression:"
             Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
             model: ["zstd", "lz4", "zlib", "none"]
             currentIndex: Math.max(0, model.indexOf(Kamora.config.compression))
             onActivated: index => Kamora.config.compression = model[index]
@@ -234,6 +278,7 @@ Kirigami.ScrollablePage {
         PathListEditor {
             Kirigami.FormData.isSection: true
             Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
 
             entries: Kamora.config.includePaths
             emptyText: "Add at least one folder to back up."
@@ -251,6 +296,7 @@ Kirigami.ScrollablePage {
         PathListEditor {
             Kirigami.FormData.isSection: true
             Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
 
             entries: Kamora.config.excludePatterns
             allowPatterns: true
@@ -328,6 +374,7 @@ Kirigami.ScrollablePage {
 
         QQC2.Label {
             Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
             text: "Older archives are pruned after every backup."
             opacity: 0.7
             wrapMode: Text.Wrap
