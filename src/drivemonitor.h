@@ -29,9 +29,6 @@ class DriveMonitor : public QObject
 {
     Q_OBJECT
 
-    Q_PROPERTY(QString targetUuid READ targetUuid WRITE setTargetUuid NOTIFY targetChanged)
-    Q_PROPERTY(QString targetContainerUuid READ targetContainerUuid WRITE setTargetContainerUuid
-                   NOTIFY targetChanged)
     Q_PROPERTY(bool targetPresent READ targetPresent NOTIFY targetChanged)
     Q_PROPERTY(bool targetLocked READ targetLocked NOTIFY targetChanged)
     Q_PROPERTY(bool targetFilesystemChanged READ targetFilesystemChanged NOTIFY targetChanged)
@@ -42,10 +39,7 @@ class DriveMonitor : public QObject
 public:
     explicit DriveMonitor(QObject *parent = nullptr);
 
-    QString targetUuid() const;
     void setTargetUuid(const QString &uuid);
-
-    QString targetContainerUuid() const;
     void setTargetContainerUuid(const QString &uuid);
 
     bool targetPresent() const;

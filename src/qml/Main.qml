@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
 import org.kamora.backup
 
@@ -17,35 +16,40 @@ Kirigami.ApplicationWindow {
     // with --background only puts the app in the tray.
     visible: false
 
-    property bool showingStatus: false
-
     // The pages are dense enough that side-by-side columns only cramp them.
     pageStack.columnView.columnResizeMode: Kirigami.ColumnView.SingleColumn
 
-    // The root page is the initial page, so that the common start-up path
-    // never creates a page before the stack is there to hold it.
-    pageStack.initialPage: Kamora.config.configured ? Qt.resolvedUrl("StatusPage.qml") : Qt.resolvedUrl("WelcomePage.qml")
+    // The list of plans is always the root: it is the one page that
+    // makes sense whether there are none, one or several.
+    pageStack.initialPage: Qt.resolvedUrl("OverviewPage.qml")
 
     function showRoot(): void {
-        showingStatus = Kamora.config.configured;
         pageStack.clear();
-        pageStack.push(showingStatus ? Qt.resolvedUrl("StatusPage.qml") : Qt.resolvedUrl("WelcomePage.qml"));
+        pageStack.push(Qt.resolvedUrl("OverviewPage.qml"));
     }
 
-    function openSetup(): void {
-        Kamora.config.beginEdit();
-        Kamora.drives.refresh();
-        pageStack.push(Qt.resolvedUrl("SetupPage.qml"));
+    function openPlan(plan): void {
+        pageStack.push(Qt.resolvedUrl("StatusPage.qml"), { plan: plan });
     }
 
-    Connections {
-        target: Kamora.config
+    function openSetup(plan): void {
+        plan.config.beginEdit();
+        plan.drives.refresh();
+        pageStack.push(Qt.resolvedUrl("SetupPage.qml"), { plan: plan });
+    }
 
-        function onChanged(): void {
-            if (root.showingStatus !== Kamora.config.configured) {
-                root.showRoot();
-            }
-        }
+    function addPlan(): void {
+        openSetup(Kamora.addPlan());
+    }
+
+    /// Takes the pages showing this plan down before it is deleted.
+    function removePlan(plan): void {
+        showRoot();
+        Kamora.removePlan(plan);
+    }
+
+    function openSettings(): void {
+        pageStack.push(Qt.resolvedUrl("SettingsPage.qml"));
     }
 
     Connections {
@@ -54,22 +58,14 @@ Kirigami.ApplicationWindow {
         function onMessage(text: string, error: bool): void {
             root.showPassiveNotification(text, error ? "long" : "short");
         }
-
-        function onConfigureRequested(): void {
-            if (root.pageStack.depth < 2) {
-                root.openSetup();
-            }
-        }
     }
 
     onClosing: close => {
         // Closing only puts Kamora back in the tray; it has to keep watching
-        // for the drive. Without a configuration there is nothing to watch.
-        if (Kamora.config.configured) {
+        // for the drives. Without a plan there is nothing to watch.
+        if (Kamora.configured) {
             close.accepted = false;
             root.hide();
         }
     }
-
-    Component.onCompleted: showingStatus = Kamora.config.configured
 }

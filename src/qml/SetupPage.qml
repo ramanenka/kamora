@@ -8,14 +8,12 @@ import org.kamora.backup
 Kirigami.ScrollablePage {
     id: page
 
-    title: Kamora.config.configured ? "Backup configuration" : "Add backup configuration"
+    required property BackupPlan plan
 
-    readonly property bool encrypted: Kamora.config.encryption !== "none"
-    readonly property bool passphraseOk: !encrypted
-        || (passphraseField.text.length === 0 && confirmField.text.length === 0)
-        || passphraseField.text === confirmField.text
-    readonly property bool canSave: Kamora.config.driveUuid.length > 0
-        && Kamora.config.includePaths.length > 0 && passphraseOk
+    title: plan.config.configured ? "Backup plan" : "Add backup plan"
+
+    readonly property bool canSave: plan.config.driveUuid.length > 0
+        && plan.config.includePaths.length > 0
 
     /// Result of the last folder pick, used for the notes below the picker.
     property var lastPick: null
@@ -31,27 +29,26 @@ Kirigami.ScrollablePage {
             icon.name: "document-save"
             enabled: page.canSave
             onTriggered: {
-                const wasConfigured = Kamora.config.configured;
-                Kamora.saveConfiguration(passphraseField.text);
-                passphraseField.clear();
-                confirmField.clear();
-                if (wasConfigured) {
-                    applicationWindow().pageStack.pop();
-                }
+                page.plan.saveConfiguration();
+                applicationWindow().pageStack.pop();
             }
         },
         Kirigami.Action {
             text: "Cancel"
             icon.name: "dialog-cancel"
             onTriggered: {
-                Kamora.config.rollback();
+                const plan = page.plan;
+                plan.config.rollback();
                 applicationWindow().pageStack.pop();
+                // A plan that was added and then abandoned never
+                // existed as far as the user is concerned.
+                Kamora.discardIfUnconfigured(plan);
             }
         },
         Kirigami.Action {
-            text: "Remove configuration"
+            text: "Remove plan"
             icon.name: "edit-delete"
-            visible: Kamora.config.configured
+            visible: page.plan.config.configured
             onTriggered: forgetDialog.open()
         }
     ]
@@ -60,9 +57,9 @@ Kirigami.ScrollablePage {
         id: repositoryDialog
 
         title: "Choose the borg repository folder on the drive"
-        currentFolder: Kamora.browseStartFolder
+        currentFolder: page.plan.browseStartFolder
 
-        onAccepted: page.lastPick = Kamora.selectRepositoryFolder(selectedFolder)
+        onAccepted: page.lastPick = page.plan.selectRepositoryFolder(selectedFolder)
     }
 
     Kirigami.PromptDialog {
@@ -72,8 +69,8 @@ Kirigami.ScrollablePage {
         // footer laid out in the page content.
         parent: applicationWindow().overlay
 
-        title: "Remove backup configuration?"
-        subtitle: "Kamora will stop watching for the drive. The archives already "
+        title: "Remove backup plan?"
+        subtitle: "Kamora will stop watching for this drive. The archives already "
             + "in the repository are left untouched."
         standardButtons: Kirigami.Dialog.Cancel
         customFooterActions: [
@@ -82,7 +79,7 @@ Kirigami.ScrollablePage {
                 icon.name: "edit-delete"
                 onTriggered: {
                     forgetDialog.close();
-                    Kamora.forgetConfiguration();
+                    applicationWindow().removePlan(page.plan);
                 }
             }
         ]
@@ -95,10 +92,25 @@ Kirigami.ScrollablePage {
             Kirigami.FormData.isSection: true
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
-            visible: !Kamora.borgAvailable
+            visible: !page.plan.borgAvailable
             type: Kirigami.MessageType.Warning
             text: "borg is not installed. Install the borgbackup package, otherwise "
-                + "Kamora can store the configuration but not run a backup."
+                + "Kamora can store the plan but not run a backup."
+        }
+
+        QQC2.TextField {
+            Kirigami.FormData.label: "Name:"
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            text: page.plan.config.name
+            placeholderText: page.plan.config.displayName
+            onTextEdited: page.plan.config.name = text
+        }
+
+        QQC2.CheckBox {
+            text: "Run this plan automatically"
+            checked: page.plan.config.enabled
+            onToggled: page.plan.config.enabled = checked
         }
 
         Kirigami.Separator {
@@ -111,11 +123,11 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
             text: {
-                if (Kamora.config.driveUuid.length === 0) {
+                if (page.plan.config.driveUuid.length === 0) {
                     return "Not chosen yet";
                 }
-                return Kamora.config.repoPath.length > 0
-                    ? Kamora.config.repoPath
+                return page.plan.config.repoPath.length > 0
+                    ? page.plan.config.repoPath
                     : "the top level of the drive";
             }
             textFormat: Text.PlainText
@@ -126,7 +138,7 @@ Kirigami.ScrollablePage {
             spacing: Kirigami.Units.smallSpacing
 
             QQC2.Button {
-                text: Kamora.config.driveUuid.length > 0 ? "Change…" : "Choose folder…"
+                text: page.plan.config.driveUuid.length > 0 ? "Change…" : "Choose folder…"
                 icon.name: "folder-open"
                 onClicked: repositoryDialog.open()
             }
@@ -134,9 +146,9 @@ Kirigami.ScrollablePage {
             QQC2.Button {
                 text: "Mount drive"
                 icon.name: "media-mount"
-                visible: Kamora.drives.targetPresent && !Kamora.drives.targetMounted
-                enabled: !Kamora.drives.busy
-                onClicked: Kamora.mountDrive()
+                visible: page.plan.drives.targetPresent && !page.plan.drives.targetMounted
+                enabled: !page.plan.drives.busy
+                onClicked: page.plan.mountDrive()
             }
         }
 
@@ -145,11 +157,11 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
             text: {
-                if (Kamora.config.driveDisplay.length === 0) {
+                if (page.plan.config.driveDisplay.length === 0) {
                     return "—";
                 }
-                return Kamora.config.driveDisplay
-                    + (Kamora.drives.targetPresent ? " (connected)" : " (not connected)");
+                return page.plan.config.driveDisplay
+                    + (page.plan.drives.targetPresent ? " (connected)" : " (not connected)");
             }
             textFormat: Text.PlainText
             elide: Text.ElideMiddle
@@ -161,14 +173,14 @@ Kirigami.ScrollablePage {
             Layout.maximumWidth: page.fieldWidth
             elide: Text.ElideRight
             text: {
-                if (Kamora.config.driveUuid.length === 0) {
+                if (page.plan.config.driveUuid.length === 0) {
                     return "no drive chosen yet";
                 }
-                if (Kamora.config.driveContainerUuid.length > 0) {
-                    return "UUID " + Kamora.config.driveUuid
-                        + ", in LUKS " + Kamora.config.driveContainerUuid;
+                if (page.plan.config.driveContainerUuid.length > 0) {
+                    return "UUID " + page.plan.config.driveUuid
+                        + ", in LUKS " + page.plan.config.driveContainerUuid;
                 }
-                return "UUID " + Kamora.config.driveUuid;
+                return "UUID " + page.plan.config.driveUuid;
             }
             textFormat: Text.PlainText
             opacity: 0.8
@@ -211,15 +223,15 @@ Kirigami.ScrollablePage {
             visible: page.lastPick !== null && page.lastPick.found && page.lastPick.encrypted
             type: Kirigami.MessageType.Information
             text: "That drive is encrypted. Kamora remembers it by its LUKS header as "
-                + "well, so it is recognised while still locked, and asks for the "
-                + "passphrase when a backup needs it."
+                + "well, so it is recognised while still locked, and the system asks "
+                + "to unlock it when a backup needs the drive."
         }
 
         Kirigami.InlineMessage {
             Kirigami.FormData.isSection: true
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
-            visible: Kamora.config.driveUuid.length > 0 && Kamora.config.repoPath.length === 0
+            visible: page.plan.config.driveUuid.length > 0 && page.plan.config.repoPath.length === 0
             type: Kirigami.MessageType.Warning
             text: "That is the top level of the drive. borg needs a directory of its "
                 + "own, so pick or create a subfolder unless the drive is empty."
@@ -229,55 +241,10 @@ Kirigami.ScrollablePage {
             Kirigami.FormData.isSection: true
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
-            visible: Kamora.config.driveUuid.length > 0 && !Kamora.drives.targetPresent
+            visible: page.plan.config.driveUuid.length > 0 && !page.plan.drives.targetPresent
             type: Kirigami.MessageType.Information
             text: "The drive is not connected right now. The choice stays as it is and "
                 + "Kamora will recognise the drive by its UUID when you plug it in."
-        }
-
-        QQC2.ComboBox {
-            id: encryptionCombo
-
-            readonly property var keys: ["none", "repokey-blake2"]
-
-            Kirigami.FormData.label: "Encryption:"
-            Layout.fillWidth: true
-            Layout.maximumWidth: page.fieldWidth
-            model: ["None — the drive is trusted", "Encrypted with a passphrase"]
-            currentIndex: Math.max(0, keys.indexOf(Kamora.config.encryption))
-            onActivated: index => Kamora.config.encryption = keys[index]
-        }
-
-        QQC2.TextField {
-            id: passphraseField
-
-            Kirigami.FormData.label: "Passphrase:"
-            Layout.fillWidth: true
-            Layout.maximumWidth: page.fieldWidth
-            visible: page.encrypted
-            echoMode: TextInput.Password
-            placeholderText: Kamora.config.configured ? "leave empty to keep the stored one" : ""
-        }
-
-        QQC2.TextField {
-            id: confirmField
-
-            Kirigami.FormData.label: "Repeat passphrase:"
-            Layout.fillWidth: true
-            Layout.maximumWidth: page.fieldWidth
-            visible: page.encrypted
-            echoMode: TextInput.Password
-        }
-
-        QQC2.Label {
-            Layout.fillWidth: true
-            Layout.maximumWidth: page.fieldWidth
-            wrapMode: Text.Wrap
-            visible: page.encrypted
-            text: page.passphraseOk ? "Stored in KWallet."
-                                    : "The two passphrases do not match."
-            color: page.passphraseOk ? Kirigami.Theme.textColor : Kirigami.Theme.negativeTextColor
-            opacity: page.passphraseOk ? 0.7 : 1
         }
 
         QQC2.ComboBox {
@@ -285,8 +252,8 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
             model: ["zstd", "lz4", "zlib", "none"]
-            currentIndex: Math.max(0, model.indexOf(Kamora.config.compression))
-            onActivated: index => Kamora.config.compression = model[index]
+            currentIndex: Math.max(0, model.indexOf(page.plan.config.compression))
+            onActivated: index => page.plan.config.compression = model[index]
         }
 
         Kirigami.Separator {
@@ -299,12 +266,12 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
 
-            entries: Kamora.config.includePaths
+            entries: page.plan.config.includePaths
             emptyText: "Add at least one folder to back up."
             addFolderText: "Add folder…"
 
-            onRemoveRequested: index => Kamora.config.removeIncludePath(index)
-            onFolderAdded: folder => Kamora.config.addIncludePath(folder)
+            onRemoveRequested: index => page.plan.config.removeIncludePath(index)
+            onFolderAdded: folder => page.plan.config.addIncludePath(folder)
         }
 
         Kirigami.Separator {
@@ -317,15 +284,15 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
 
-            entries: Kamora.config.excludePatterns
+            entries: page.plan.config.excludePatterns
             allowPatterns: true
             emptyText: "Nothing is excluded."
             addFolderText: "Exclude folder…"
             patternPlaceholder: "borg pattern, for example sh:**/build"
 
-            onRemoveRequested: index => Kamora.config.removeExcludePattern(index)
-            onFolderAdded: folder => Kamora.config.addExcludeFolder(folder)
-            onPatternAdded: pattern => Kamora.config.addExcludePattern(pattern)
+            onRemoveRequested: index => page.plan.config.removeExcludePattern(index)
+            onFolderAdded: folder => page.plan.config.addExcludeFolder(folder)
+            onPatternAdded: pattern => page.plan.config.addExcludePattern(pattern)
         }
 
         Kirigami.Separator {
@@ -338,28 +305,22 @@ Kirigami.ScrollablePage {
             from: 1
             to: 24 * 60
             stepSize: 1
-            value: Kamora.config.intervalHours
+            value: page.plan.config.intervalHours
             textFromValue: (value, locale) => value + (value === 1 ? " hour" : " hours")
             valueFromText: text => parseInt(text, 10)
-            onValueModified: Kamora.config.intervalHours = value
+            onValueModified: page.plan.config.intervalHours = value
         }
 
         QQC2.CheckBox {
             text: "Start the backup on its own when the drive is connected"
-            checked: Kamora.config.backupOnConnect
-            onToggled: Kamora.config.backupOnConnect = checked
+            checked: page.plan.config.backupOnConnect
+            onToggled: page.plan.config.backupOnConnect = checked
         }
 
         QQC2.CheckBox {
             text: "Unmount the drive when the backup is done"
-            checked: Kamora.config.unmountAfter
-            onToggled: Kamora.config.unmountAfter = checked
-        }
-
-        QQC2.CheckBox {
-            text: "Start Kamora automatically at login"
-            checked: Kamora.config.autostart
-            onToggled: Kamora.config.autostart = checked
+            checked: page.plan.config.unmountAfter
+            onToggled: page.plan.config.unmountAfter = checked
         }
 
         Kirigami.Separator {
@@ -371,24 +332,24 @@ Kirigami.ScrollablePage {
             Kirigami.FormData.label: "Daily:"
             from: 0
             to: 365
-            value: Kamora.config.keepDaily
-            onValueModified: Kamora.config.keepDaily = value
+            value: page.plan.config.keepDaily
+            onValueModified: page.plan.config.keepDaily = value
         }
 
         QQC2.SpinBox {
             Kirigami.FormData.label: "Weekly:"
             from: 0
             to: 520
-            value: Kamora.config.keepWeekly
-            onValueModified: Kamora.config.keepWeekly = value
+            value: page.plan.config.keepWeekly
+            onValueModified: page.plan.config.keepWeekly = value
         }
 
         QQC2.SpinBox {
             Kirigami.FormData.label: "Monthly:"
             from: 0
             to: 240
-            value: Kamora.config.keepMonthly
-            onValueModified: Kamora.config.keepMonthly = value
+            value: page.plan.config.keepMonthly
+            onValueModified: page.plan.config.keepMonthly = value
         }
 
         QQC2.Label {

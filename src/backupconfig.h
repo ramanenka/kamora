@@ -7,8 +7,15 @@
 
 #include <KSharedConfig>
 
+class KConfigGroup;
+
 /**
- * Everything the user configured plus the state of the last run.
+ * One backup configuration plus the state of its last run.
+ *
+ * Several of these live side by side in kamorarc, each in its own [Backups][id]
+ * group, so the same Kamora can keep an offsite drive and a daily drive without
+ * the two knowing about each other. Settings that are not about one particular
+ * repository - launching at login, for one - belong in AppSettings instead.
  *
  * All properties share a single change notification: the configuration is
  * small, it changes rarely, and QML only ever re-evaluates a handful of
@@ -18,7 +25,11 @@ class BackupConfig : public QObject
 {
     Q_OBJECT
 
+    Q_PROPERTY(QString id READ id CONSTANT)
+    Q_PROPERTY(QString name READ name WRITE setName NOTIFY changed)
+    Q_PROPERTY(QString displayName READ displayName NOTIFY changed)
     Q_PROPERTY(bool configured READ configured WRITE setConfigured NOTIFY changed)
+    Q_PROPERTY(bool enabled READ enabled WRITE setEnabled NOTIFY changed)
 
     Q_PROPERTY(QString driveUuid READ driveUuid WRITE setDriveUuid NOTIFY changed)
     Q_PROPERTY(QString driveContainerUuid READ driveContainerUuid WRITE setDriveContainerUuid
@@ -26,10 +37,8 @@ class BackupConfig : public QObject
     Q_PROPERTY(QString borgRepoId READ borgRepoId WRITE setBorgRepoId NOTIFY changed)
     Q_PROPERTY(QString driveLabel READ driveLabel WRITE setDriveLabel NOTIFY changed)
     Q_PROPERTY(QString driveDisplay READ driveDisplay WRITE setDriveDisplay NOTIFY changed)
-    Q_PROPERTY(QString driveDevice READ driveDevice WRITE setDriveDevice NOTIFY changed)
 
     Q_PROPERTY(QString repoPath READ repoPath WRITE setRepoPath NOTIFY changed)
-    Q_PROPERTY(QString encryption READ encryption WRITE setEncryption NOTIFY changed)
     Q_PROPERTY(QString compression READ compression WRITE setCompression NOTIFY changed)
 
     Q_PROPERTY(QStringList includePaths READ includePaths WRITE setIncludePaths NOTIFY changed)
@@ -38,7 +47,6 @@ class BackupConfig : public QObject
     Q_PROPERTY(int intervalHours READ intervalHours WRITE setIntervalHours NOTIFY changed)
     Q_PROPERTY(bool backupOnConnect READ backupOnConnect WRITE setBackupOnConnect NOTIFY changed)
     Q_PROPERTY(bool unmountAfter READ unmountAfter WRITE setUnmountAfter NOTIFY changed)
-    Q_PROPERTY(bool autostart READ autostart WRITE setAutostart NOTIFY changed)
 
     Q_PROPERTY(int keepDaily READ keepDaily WRITE setKeepDaily NOTIFY changed)
     Q_PROPERTY(int keepWeekly READ keepWeekly WRITE setKeepWeekly NOTIFY changed)
@@ -50,10 +58,23 @@ class BackupConfig : public QObject
     Q_PROPERTY(QString lastArchive READ lastArchive NOTIFY changed)
 
 public:
-    explicit BackupConfig(QObject *parent = nullptr);
+    /// The id names this configuration's group in the config file; it never changes.
+    explicit BackupConfig(KSharedConfig::Ptr config, const QString &id, QObject *parent = nullptr);
+
+    QString id() const;
+
+    /// What the user called this configuration; may be empty.
+    QString name() const;
+    void setName(const QString &value);
+    /// name(), or something recognisable derived from the drive and folder.
+    QString displayName() const;
 
     bool configured() const;
     void setConfigured(bool value);
+
+    /// A configuration that is switched off is never backed up automatically.
+    bool enabled() const;
+    void setEnabled(bool value);
 
     QString driveUuid() const;
     void setDriveUuid(const QString &value);
@@ -75,13 +96,9 @@ public:
     void setDriveLabel(const QString &value);
     QString driveDisplay() const;
     void setDriveDisplay(const QString &value);
-    QString driveDevice() const;
-    void setDriveDevice(const QString &value);
 
     QString repoPath() const;
     void setRepoPath(const QString &value);
-    QString encryption() const;
-    void setEncryption(const QString &value);
     QString compression() const;
     void setCompression(const QString &value);
 
@@ -96,8 +113,6 @@ public:
     void setBackupOnConnect(bool value);
     bool unmountAfter() const;
     void setUnmountAfter(bool value);
-    bool autostart() const;
-    void setAutostart(bool value);
 
     int keepDaily() const;
     void setKeepDaily(int value);
@@ -114,13 +129,6 @@ public:
     /// Records the outcome of a run and saves it right away.
     void recordRun(const QString &status, const QString &archive, const QString &error);
 
-    /**
-     * Key under which the repository passphrase is stored. Kamora's own
-     * identifier for the configured repository - unrelated to borgRepoId(),
-     * which is the id borg itself keeps inside the repository.
-     */
-    Q_INVOKABLE QString repoId() const;
-
     /// Editing helpers used by the setup page.
     Q_INVOKABLE void beginEdit();
     Q_INVOKABLE void rollback();
@@ -132,8 +140,8 @@ public:
     Q_INVOKABLE void addExcludeFolder(const QUrl &url);
     Q_INVOKABLE void removeExcludePattern(int index);
 
-    /// Drops the whole configuration, returning to the welcome screen.
-    Q_INVOKABLE void forget();
+    /// Drops this configuration's groups from kamorarc.
+    void erase();
 
     void save();
 
@@ -142,22 +150,21 @@ Q_SIGNALS:
 
 private:
     struct Settings {
+        QString name;
         bool configured = false;
+        bool enabled = true;
         QString driveUuid;
         QString driveContainerUuid;
         QString borgRepoId;
         QString driveLabel;
         QString driveDisplay;
-        QString driveDevice;
         QString repoPath;
-        QString encryption = QStringLiteral("none");
         QString compression = QStringLiteral("zstd");
         QStringList includePaths;
         QStringList excludePatterns;
         int intervalHours = 24;
         bool backupOnConnect = true;
         bool unmountAfter = true;
-        bool autostart = true;
         int keepDaily = 7;
         int keepWeekly = 4;
         int keepMonthly = 6;
@@ -168,10 +175,13 @@ private:
     };
 
     void load();
+    KConfigGroup group() const;
+    KConfigGroup stateGroup() const;
     template<typename T>
     void assign(T &target, const T &value);
 
     KSharedConfig::Ptr m_config;
+    QString m_id;
     Settings m_settings;
     Settings m_editBackup;
 };

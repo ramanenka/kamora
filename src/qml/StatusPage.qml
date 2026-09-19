@@ -4,25 +4,33 @@ import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
 import org.kamora.backup
 
+/**
+ * Everything about one backup plan: what it is waiting for, which
+ * drive it wants, and what is already in its repository.
+ */
 Kirigami.ScrollablePage {
     id: page
 
-    title: "Kamora Backup"
+    required property BackupPlan plan
+
+    title: plan.config.displayName
 
     // See SetupPage: a form is only as narrow as its widest child allows.
     readonly property int fieldWidth: Kirigami.Units.gridUnit * 24
 
     actions: [
         Kirigami.Action {
-            text: Kamora.runner.running ? "Cancel" : "Back up now"
-            icon.name: Kamora.runner.running ? "dialog-cancel" : "backup"
-            enabled: Kamora.runner.running || Kamora.canBackupNow
-            onTriggered: Kamora.runner.running ? Kamora.cancelBackup() : Kamora.startBackup()
+            text: page.plan.active ? "Cancel" : "Back up now"
+            icon.name: page.plan.active ? "dialog-cancel" : "backup"
+            enabled: page.plan.active || (!Kamora.anyRunning && page.plan.canBackupNow)
+            onTriggered: page.plan.active
+                ? page.plan.cancel()
+                : page.plan.requestStart()
         },
         Kirigami.Action {
             text: "Configure…"
             icon.name: "configure"
-            onTriggered: applicationWindow().openSetup()
+            onTriggered: applicationWindow().openSetup(page.plan)
         },
         Kirigami.Action {
             text: "Show log"
@@ -33,6 +41,8 @@ Kirigami.ScrollablePage {
 
     LogSheet {
         id: logSheet
+
+        plan: page.plan
     }
 
     ColumnLayout {
@@ -40,14 +50,14 @@ Kirigami.ScrollablePage {
 
         Kirigami.InlineMessage {
             Layout.fillWidth: true
-            visible: !Kamora.borgAvailable
+            visible: !page.plan.borgAvailable
             type: Kirigami.MessageType.Error
             text: "borg is not installed, so no backup can run. Install the borgbackup package."
         }
 
         Kirigami.InlineMessage {
             Layout.fillWidth: true
-            visible: Kamora.drives.targetFilesystemChanged
+            visible: page.plan.drives.targetFilesystemChanged
             type: Kirigami.MessageType.Warning
             text: "This is the drive you configured, but it holds a different filesystem "
                 + "than it did then - it has been reformatted or restored. If the "
@@ -57,9 +67,17 @@ Kirigami.ScrollablePage {
                 Kirigami.Action {
                     text: "Reconfigure"
                     icon.name: "configure"
-                    onTriggered: Kamora.requestConfigure()
+                    onTriggered: applicationWindow().openSetup(page.plan)
                 }
             ]
+        }
+
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: !page.plan.config.enabled && page.plan.config.configured
+            type: Kirigami.MessageType.Information
+            text: "This plan is switched off. It never runs on its own, "
+                + "only when you start it from here."
         }
 
         Kirigami.AbstractCard {
@@ -73,7 +91,7 @@ Kirigami.ScrollablePage {
                     spacing: Kirigami.Units.largeSpacing
 
                     Kirigami.Icon {
-                        source: Kamora.statusIcon
+                        source: page.plan.statusIcon
                         implicitWidth: Kirigami.Units.iconSizes.huge
                         implicitHeight: Kirigami.Units.iconSizes.huge
                     }
@@ -85,14 +103,14 @@ Kirigami.ScrollablePage {
                         Kirigami.Heading {
                             Layout.fillWidth: true
                             level: 2
-                            text: Kamora.headline
+                            text: page.plan.headline
                             wrapMode: Text.Wrap
                         }
 
                         QQC2.Label {
                             Layout.fillWidth: true
                             Layout.preferredWidth: Kirigami.Units.gridUnit * 12
-                            text: Kamora.subtitle
+                            text: page.plan.subtitle
                             wrapMode: Text.Wrap
                             elide: Text.ElideMiddle
                             maximumLineCount: 3
@@ -103,17 +121,17 @@ Kirigami.ScrollablePage {
 
                 QQC2.ProgressBar {
                     Layout.fillWidth: true
-                    visible: Kamora.runner.running
-                    indeterminate: Kamora.runner.progress < 0
+                    visible: page.plan.runner.running
+                    indeterminate: page.plan.runner.progress < 0
                     from: 0
                     to: 1
-                    value: Math.max(0, Kamora.runner.progress)
+                    value: Math.max(0, page.plan.runner.progress)
                 }
 
                 QQC2.Label {
                     Layout.fillWidth: true
-                    visible: Kamora.runner.running
-                    text: Kamora.runner.stepLabel
+                    visible: page.plan.runner.running
+                    text: page.plan.runner.stepLabel
                     opacity: 0.7
                 }
             }
@@ -121,10 +139,10 @@ Kirigami.ScrollablePage {
 
         Kirigami.InlineMessage {
             Layout.fillWidth: true
-            visible: !Kamora.runner.running && Kamora.config.lastStatus === "failed"
+            visible: !page.plan.active && page.plan.config.lastStatus === "failed"
             type: Kirigami.MessageType.Error
-            text: Kamora.config.lastError.length > 0 ? Kamora.config.lastError
-                                                     : "The last backup did not finish."
+            text: page.plan.config.lastError.length > 0 ? page.plan.config.lastError
+                                                       : "The last backup did not finish."
             actions: [
                 Kirigami.Action {
                     text: "Show log"
@@ -145,8 +163,8 @@ Kirigami.ScrollablePage {
             QQC2.Label {
                 Kirigami.FormData.label: "Drive:"
                 Layout.maximumWidth: page.fieldWidth
-                text: Kamora.config.driveDisplay.length > 0 ? Kamora.config.driveDisplay
-                                                            : Kamora.config.driveUuid
+                text: page.plan.config.driveDisplay.length > 0 ? page.plan.config.driveDisplay
+                                                              : page.plan.config.driveUuid
                 textFormat: Text.PlainText
                 elide: Text.ElideMiddle
                 Layout.fillWidth: true
@@ -158,8 +176,8 @@ Kirigami.ScrollablePage {
                 Layout.maximumWidth: page.fieldWidth
 
                 Kirigami.Icon {
-                    source: !Kamora.drives.targetPresent ? "media-eject"
-                        : (Kamora.drives.targetLocked ? "lock" : "media-mount")
+                    source: !page.plan.drives.targetPresent ? "media-eject"
+                        : (page.plan.drives.targetLocked ? "lock" : "media-mount")
                     implicitWidth: Kirigami.Units.iconSizes.small
                     implicitHeight: Kirigami.Units.iconSizes.small
                 }
@@ -169,14 +187,14 @@ Kirigami.ScrollablePage {
                     Layout.preferredWidth: Kirigami.Units.gridUnit * 12
                     elide: Text.ElideMiddle
                     text: {
-                        if (!Kamora.drives.targetPresent) {
+                        if (!page.plan.drives.targetPresent) {
                             return "not connected";
                         }
-                        if (Kamora.drives.targetLocked) {
+                        if (page.plan.drives.targetLocked) {
                             return "connected, locked";
                         }
-                        return Kamora.drives.targetMounted
-                            ? "connected, mounted at " + Kamora.drives.targetMountPoint
+                        return page.plan.drives.targetMounted
+                            ? "connected, mounted at " + page.plan.drives.targetMountPoint
                             : "connected, not mounted";
                     }
                     textFormat: Text.PlainText
@@ -192,11 +210,11 @@ Kirigami.ScrollablePage {
                     Layout.fillWidth: true
                     Layout.preferredWidth: Kirigami.Units.gridUnit * 12
                     text: {
-                        if (Kamora.repositoryPath.length > 0) {
-                            return Kamora.repositoryPath;
+                        if (page.plan.repositoryPath.length > 0) {
+                            return page.plan.repositoryPath;
                         }
-                        return Kamora.config.repoPath.length > 0
-                            ? Kamora.config.repoPath + " (on the drive)"
+                        return page.plan.config.repoPath.length > 0
+                            ? page.plan.config.repoPath + " (on the drive)"
                             : "the top level of the drive";
                     }
                     textFormat: Text.PlainText
@@ -206,26 +224,26 @@ Kirigami.ScrollablePage {
 
             RowLayout {
                 QQC2.Button {
-                    text: Kamora.drives.targetLocked ? "Unlock and mount" : "Mount"
-                    icon.name: Kamora.drives.targetLocked ? "unlock" : "media-mount"
-                    visible: Kamora.drives.targetPresent && !Kamora.drives.targetMounted
-                    enabled: !Kamora.drives.busy
-                    onClicked: Kamora.mountDrive()
+                    text: page.plan.drives.targetLocked ? "Unlock and mount" : "Mount"
+                    icon.name: page.plan.drives.targetLocked ? "unlock" : "media-mount"
+                    visible: page.plan.drives.targetPresent && !page.plan.drives.targetMounted
+                    enabled: !page.plan.drives.busy
+                    onClicked: page.plan.mountDrive()
                 }
 
                 QQC2.Button {
-                    text: Kamora.config.driveContainerUuid.length > 0 ? "Unmount and lock" : "Unmount"
+                    text: page.plan.config.driveContainerUuid.length > 0 ? "Unmount and lock" : "Unmount"
                     icon.name: "media-eject"
-                    visible: Kamora.drives.targetMounted
-                    enabled: !Kamora.drives.busy && !Kamora.runner.running
-                    onClicked: Kamora.unmountDrive()
+                    visible: page.plan.drives.targetMounted
+                    enabled: !page.plan.drives.busy && !page.plan.active
+                    onClicked: page.plan.unmountDrive()
                 }
 
                 QQC2.Button {
                     text: "Open repository"
                     icon.name: "folder-open"
-                    visible: Kamora.repositoryPath.length > 0
-                    onClicked: Kamora.openRepositoryFolder()
+                    visible: page.plan.repositoryPath.length > 0
+                    onClicked: page.plan.openRepositoryFolder()
                 }
             }
 
@@ -236,38 +254,39 @@ Kirigami.ScrollablePage {
 
             QQC2.Label {
                 Kirigami.FormData.label: "Last backup:"
-                text: Kamora.lastBackupText
+                text: page.plan.lastBackupText
                 textFormat: Text.PlainText
             }
 
             QQC2.Label {
                 Kirigami.FormData.label: "Next backup:"
-                text: Kamora.nextBackupText
+                text: page.plan.nextBackupText.length > 0 ? page.plan.nextBackupText : "—"
                 textFormat: Text.PlainText
             }
 
             QQC2.Label {
                 Kirigami.FormData.label: "Every:"
-                text: Kamora.config.intervalHours + (Kamora.config.intervalHours === 1 ? " hour" : " hours")
+                text: page.plan.config.intervalHours
+                    + (page.plan.config.intervalHours === 1 ? " hour" : " hours")
                 textFormat: Text.PlainText
             }
 
             QQC2.Label {
                 Kirigami.FormData.label: "Folders:"
-                text: Kamora.config.includePaths.length + " included, "
-                    + Kamora.config.excludePatterns.length + " exclusions"
+                text: page.plan.config.includePaths.length + " included, "
+                    + page.plan.config.excludePatterns.length + " exclusions"
                 textFormat: Text.PlainText
             }
         }
 
         Kirigami.ListSectionHeader {
             Layout.fillWidth: true
-            visible: Kamora.archives.length > 0
+            visible: page.plan.archives.length > 0
             text: "Archives in the repository"
         }
 
         Repeater {
-            model: Kamora.archives
+            model: page.plan.archives
 
             delegate: RowLayout {
                 id: archiveRow
@@ -301,8 +320,8 @@ Kirigami.ScrollablePage {
 
         QQC2.Label {
             Layout.fillWidth: true
-            visible: Kamora.archives.length === 0 && Kamora.drives.targetMounted
-            text: Kamora.repositoryExists
+            visible: page.plan.archives.length === 0 && page.plan.drives.targetMounted
+            text: page.plan.repositoryExists
                 ? "The archive list could not be read from the repository."
                 : "No repository on the drive yet — the first backup creates it."
             opacity: 0.7

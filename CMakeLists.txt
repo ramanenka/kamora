@@ -34,7 +34,6 @@ find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS
     StatusNotifierItem
     DBusAddons
     Solid
-    Wallet
 )
 
 set(CMAKE_CXX_STANDARD 20)
@@ -45,16 +44,18 @@ add_executable(kamora)
 
 target_sources(kamora PRIVATE
     src/main.cpp
+    src/appsettings.cpp
+    src/appsettings.h
     src/backupconfig.cpp
     src/backupconfig.h
     src/backupcontroller.cpp
     src/backupcontroller.h
+    src/backupplan.cpp
+    src/backupplan.h
     src/borgrunner.cpp
     src/borgrunner.h
     src/drivemonitor.cpp
     src/drivemonitor.h
-    src/passphrasestore.cpp
-    src/passphrasestore.h
     src/trayicon.cpp
     src/trayicon.h
 )
@@ -63,8 +64,9 @@ ecm_add_qml_module(kamora URI org.kamora.backup GENERATE_PLUGIN_SOURCE)
 
 ecm_target_qml_sources(kamora SOURCES
     src/qml/Main.qml
-    src/qml/WelcomePage.qml
+    src/qml/OverviewPage.qml
     src/qml/SetupPage.qml
+    src/qml/SettingsPage.qml
     src/qml/StatusPage.qml
     src/qml/PathListEditor.qml
     src/qml/LogSheet.qml
@@ -86,7 +88,6 @@ target_link_libraries(kamora PRIVATE
     KF6::StatusNotifierItem
     KF6::DBusAddons
     KF6::Solid
-    KF6::Wallet
 )
 
 ecm_finalize_qml_module(kamora)

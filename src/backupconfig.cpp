@@ -3,6 +3,7 @@
 #include <QDir>
 
 #include <KConfigGroup>
+#include <KLocalizedString>
 
 using namespace Qt::StringLiterals;
 
@@ -19,12 +20,23 @@ const QStringList defaultExcludes()
 }
 }
 
-BackupConfig::BackupConfig(QObject *parent)
+BackupConfig::BackupConfig(KSharedConfig::Ptr config, const QString &id, QObject *parent)
     : QObject(parent)
-    , m_config(KSharedConfig::openConfig(u"kamorarc"_s))
+    , m_config(std::move(config))
+    , m_id(id)
 {
     m_settings.excludePatterns = defaultExcludes();
     load();
+}
+
+KConfigGroup BackupConfig::group() const
+{
+    return m_config->group(u"Backups"_s).group(m_id);
+}
+
+KConfigGroup BackupConfig::stateGroup() const
+{
+    return group().group(u"State"_s);
 }
 
 template<typename T>
@@ -37,6 +49,35 @@ void BackupConfig::assign(T &target, const T &value)
     Q_EMIT changed();
 }
 
+QString BackupConfig::id() const
+{
+    return m_id;
+}
+
+QString BackupConfig::name() const
+{
+    return m_settings.name;
+}
+
+void BackupConfig::setName(const QString &value)
+{
+    assign(m_settings.name, value);
+}
+
+QString BackupConfig::displayName() const
+{
+    if (!m_settings.name.isEmpty()) {
+        return m_settings.name;
+    }
+    const QString drive =
+        m_settings.driveLabel.isEmpty() ? m_settings.driveDisplay : m_settings.driveLabel;
+    if (drive.isEmpty()) {
+        return i18n("New backup");
+    }
+    return m_settings.repoPath.isEmpty() ? drive : i18nc("repository on a drive", "%1 on %2",
+                                                         m_settings.repoPath, drive);
+}
+
 bool BackupConfig::configured() const
 {
     return m_settings.configured;
@@ -45,6 +86,16 @@ bool BackupConfig::configured() const
 void BackupConfig::setConfigured(bool value)
 {
     assign(m_settings.configured, value);
+}
+
+bool BackupConfig::enabled() const
+{
+    return m_settings.enabled;
+}
+
+void BackupConfig::setEnabled(bool value)
+{
+    assign(m_settings.enabled, value);
 }
 
 QString BackupConfig::driveUuid() const
@@ -97,16 +148,6 @@ void BackupConfig::setDriveDisplay(const QString &value)
     assign(m_settings.driveDisplay, value);
 }
 
-QString BackupConfig::driveDevice() const
-{
-    return m_settings.driveDevice;
-}
-
-void BackupConfig::setDriveDevice(const QString &value)
-{
-    assign(m_settings.driveDevice, value);
-}
-
 QString BackupConfig::repoPath() const
 {
     return m_settings.repoPath;
@@ -115,16 +156,6 @@ QString BackupConfig::repoPath() const
 void BackupConfig::setRepoPath(const QString &value)
 {
     assign(m_settings.repoPath, value);
-}
-
-QString BackupConfig::encryption() const
-{
-    return m_settings.encryption;
-}
-
-void BackupConfig::setEncryption(const QString &value)
-{
-    assign(m_settings.encryption, value);
 }
 
 QString BackupConfig::compression() const
@@ -185,16 +216,6 @@ bool BackupConfig::unmountAfter() const
 void BackupConfig::setUnmountAfter(bool value)
 {
     assign(m_settings.unmountAfter, value);
-}
-
-bool BackupConfig::autostart() const
-{
-    return m_settings.autostart;
-}
-
-void BackupConfig::setAutostart(bool value)
-{
-    assign(m_settings.autostart, value);
 }
 
 int BackupConfig::keepDaily() const
@@ -260,11 +281,6 @@ void BackupConfig::recordRun(const QString &status, const QString &archive, cons
     save();
 }
 
-QString BackupConfig::repoId() const
-{
-    return m_settings.driveUuid + u':' + m_settings.repoPath;
-}
-
 void BackupConfig::beginEdit()
 {
     m_editBackup = m_settings;
@@ -278,6 +294,7 @@ void BackupConfig::rollback()
 
 void BackupConfig::commit()
 {
+    m_settings.name = m_settings.name.trimmed();
     m_settings.repoPath = m_settings.repoPath.trimmed();
     while (m_settings.repoPath.startsWith(u'/')) {
         m_settings.repoPath.remove(0, 1);
@@ -332,38 +349,37 @@ void BackupConfig::removeExcludePattern(int index)
     Q_EMIT changed();
 }
 
-void BackupConfig::forget()
+void BackupConfig::erase()
 {
-    m_settings = Settings{};
-    m_settings.excludePatterns = defaultExcludes();
-    save();
+    KConfigGroup own = group();
+    own.deleteGroup();
+    m_config->sync();
 }
 
 void BackupConfig::load()
 {
-    const KConfigGroup group = m_config->group(u"Backup"_s);
-    m_settings.configured = group.readEntry("Configured", m_settings.configured);
-    m_settings.driveUuid = group.readEntry("DriveUuid", m_settings.driveUuid);
+    const KConfigGroup own = group();
+    m_settings.name = own.readEntry("Name", m_settings.name);
+    m_settings.configured = own.readEntry("Configured", m_settings.configured);
+    m_settings.enabled = own.readEntry("Enabled", m_settings.enabled);
+    m_settings.driveUuid = own.readEntry("DriveUuid", m_settings.driveUuid);
     m_settings.driveContainerUuid =
-        group.readEntry("DriveContainerUuid", m_settings.driveContainerUuid);
-    m_settings.borgRepoId = group.readEntry("BorgRepoId", m_settings.borgRepoId);
-    m_settings.driveLabel = group.readEntry("DriveLabel", m_settings.driveLabel);
-    m_settings.driveDisplay = group.readEntry("DriveDisplay", m_settings.driveDisplay);
-    m_settings.driveDevice = group.readEntry("DriveDevice", m_settings.driveDevice);
-    m_settings.repoPath = group.readEntry("RepoPath", m_settings.repoPath);
-    m_settings.encryption = group.readEntry("Encryption", m_settings.encryption);
-    m_settings.compression = group.readEntry("Compression", m_settings.compression);
-    m_settings.includePaths = group.readEntry("IncludePaths", m_settings.includePaths);
-    m_settings.excludePatterns = group.readEntry("ExcludePatterns", m_settings.excludePatterns);
-    m_settings.intervalHours = group.readEntry("IntervalHours", m_settings.intervalHours);
-    m_settings.backupOnConnect = group.readEntry("BackupOnConnect", m_settings.backupOnConnect);
-    m_settings.unmountAfter = group.readEntry("UnmountAfter", m_settings.unmountAfter);
-    m_settings.autostart = group.readEntry("Autostart", m_settings.autostart);
-    m_settings.keepDaily = group.readEntry("KeepDaily", m_settings.keepDaily);
-    m_settings.keepWeekly = group.readEntry("KeepWeekly", m_settings.keepWeekly);
-    m_settings.keepMonthly = group.readEntry("KeepMonthly", m_settings.keepMonthly);
+        own.readEntry("DriveContainerUuid", m_settings.driveContainerUuid);
+    m_settings.borgRepoId = own.readEntry("BorgRepoId", m_settings.borgRepoId);
+    m_settings.driveLabel = own.readEntry("DriveLabel", m_settings.driveLabel);
+    m_settings.driveDisplay = own.readEntry("DriveDisplay", m_settings.driveDisplay);
+    m_settings.repoPath = own.readEntry("RepoPath", m_settings.repoPath);
+    m_settings.compression = own.readEntry("Compression", m_settings.compression);
+    m_settings.includePaths = own.readEntry("IncludePaths", m_settings.includePaths);
+    m_settings.excludePatterns = own.readEntry("ExcludePatterns", m_settings.excludePatterns);
+    m_settings.intervalHours = own.readEntry("IntervalHours", m_settings.intervalHours);
+    m_settings.backupOnConnect = own.readEntry("BackupOnConnect", m_settings.backupOnConnect);
+    m_settings.unmountAfter = own.readEntry("UnmountAfter", m_settings.unmountAfter);
+    m_settings.keepDaily = own.readEntry("KeepDaily", m_settings.keepDaily);
+    m_settings.keepWeekly = own.readEntry("KeepWeekly", m_settings.keepWeekly);
+    m_settings.keepMonthly = own.readEntry("KeepMonthly", m_settings.keepMonthly);
 
-    const KConfigGroup state = m_config->group(u"State"_s);
+    const KConfigGroup state = stateGroup();
     m_settings.lastBackup = state.readEntry("LastBackup", QDateTime());
     m_settings.lastStatus = state.readEntry("LastStatus", QString());
     m_settings.lastError = state.readEntry("LastError", QString());
@@ -374,28 +390,27 @@ void BackupConfig::load()
 
 void BackupConfig::save()
 {
-    KConfigGroup group = m_config->group(u"Backup"_s);
-    group.writeEntry("Configured", m_settings.configured);
-    group.writeEntry("DriveUuid", m_settings.driveUuid);
-    group.writeEntry("DriveContainerUuid", m_settings.driveContainerUuid);
-    group.writeEntry("BorgRepoId", m_settings.borgRepoId);
-    group.writeEntry("DriveLabel", m_settings.driveLabel);
-    group.writeEntry("DriveDisplay", m_settings.driveDisplay);
-    group.writeEntry("DriveDevice", m_settings.driveDevice);
-    group.writeEntry("RepoPath", m_settings.repoPath);
-    group.writeEntry("Encryption", m_settings.encryption);
-    group.writeEntry("Compression", m_settings.compression);
-    group.writeEntry("IncludePaths", m_settings.includePaths);
-    group.writeEntry("ExcludePatterns", m_settings.excludePatterns);
-    group.writeEntry("IntervalHours", m_settings.intervalHours);
-    group.writeEntry("BackupOnConnect", m_settings.backupOnConnect);
-    group.writeEntry("UnmountAfter", m_settings.unmountAfter);
-    group.writeEntry("Autostart", m_settings.autostart);
-    group.writeEntry("KeepDaily", m_settings.keepDaily);
-    group.writeEntry("KeepWeekly", m_settings.keepWeekly);
-    group.writeEntry("KeepMonthly", m_settings.keepMonthly);
+    KConfigGroup own = group();
+    own.writeEntry("Name", m_settings.name);
+    own.writeEntry("Configured", m_settings.configured);
+    own.writeEntry("Enabled", m_settings.enabled);
+    own.writeEntry("DriveUuid", m_settings.driveUuid);
+    own.writeEntry("DriveContainerUuid", m_settings.driveContainerUuid);
+    own.writeEntry("BorgRepoId", m_settings.borgRepoId);
+    own.writeEntry("DriveLabel", m_settings.driveLabel);
+    own.writeEntry("DriveDisplay", m_settings.driveDisplay);
+    own.writeEntry("RepoPath", m_settings.repoPath);
+    own.writeEntry("Compression", m_settings.compression);
+    own.writeEntry("IncludePaths", m_settings.includePaths);
+    own.writeEntry("ExcludePatterns", m_settings.excludePatterns);
+    own.writeEntry("IntervalHours", m_settings.intervalHours);
+    own.writeEntry("BackupOnConnect", m_settings.backupOnConnect);
+    own.writeEntry("UnmountAfter", m_settings.unmountAfter);
+    own.writeEntry("KeepDaily", m_settings.keepDaily);
+    own.writeEntry("KeepWeekly", m_settings.keepWeekly);
+    own.writeEntry("KeepMonthly", m_settings.keepMonthly);
 
-    KConfigGroup state = m_config->group(u"State"_s);
+    KConfigGroup state = stateGroup();
     state.writeEntry("LastBackup", m_settings.lastBackup);
     state.writeEntry("LastStatus", m_settings.lastStatus);
     state.writeEntry("LastError", m_settings.lastError);

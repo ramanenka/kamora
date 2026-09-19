@@ -148,11 +148,6 @@ DriveMonitor::DriveMonitor(QObject *parent)
     refresh();
 }
 
-QString DriveMonitor::targetUuid() const
-{
-    return m_targetUuid;
-}
-
 void DriveMonitor::setTargetUuid(const QString &uuid)
 {
     if (m_targetUuid == uuid) {
@@ -192,11 +187,6 @@ void DriveMonitor::setBusy(bool value)
     }
     m_busy = value;
     Q_EMIT busyChanged();
-}
-
-QString DriveMonitor::targetContainerUuid() const
-{
-    return m_targetContainerUuid;
 }
 
 void DriveMonitor::setTargetContainerUuid(const QString &uuid)

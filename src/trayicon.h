@@ -3,7 +3,6 @@
 #include <QObject>
 
 class KStatusNotifierItem;
-class QAction;
 class QWindow;
 
 /**
@@ -30,17 +29,13 @@ public:
 
     void setState(State state, const QString &subtitle);
     void setAssociatedWindow(QWindow *window);
-    void setBackupActionEnabled(bool enabled);
 
 Q_SIGNALS:
-    void backupRequested();
     void showWindowRequested();
-    void configureRequested();
     void quitRequested();
 
 private:
     KStatusNotifierItem *m_item = nullptr;
-    QAction *m_backupAction = nullptr;
     State m_state = Idle;
     QString m_subtitle;
 };

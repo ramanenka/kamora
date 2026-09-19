@@ -1,191 +1,136 @@
 #include "backupcontroller.h"
 
-#include <QDesktopServices>
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
-#include <QGuiApplication>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QStandardPaths>
-#include <QUrl>
+#include <QCoreApplication>
 #include <QWindow>
 
-#include <KConfig>
 #include <KConfigGroup>
-#include <KFormat>
 #include <KLocalizedString>
-#include <KNotification>
-
-#include "backupconfig.h"
-#include "borgrunner.h"
-#include "drivemonitor.h"
-#include "passphrasestore.h"
 
 using namespace Qt::StringLiterals;
 
-namespace
-{
-// borg stores the repository id unencrypted in the repository's "config" file,
-// so it can be checked without the passphrase and without running borg.
-QString readBorgRepositoryId(const QString &repository)
-{
-    const QString file = QDir(repository).filePath(u"config"_s);
-    if (!QFileInfo::exists(file)) {
-        return QString();
-    }
-    KConfig config(file, KConfig::SimpleConfig);
-    return config.group(u"repository"_s).readEntry("id", QString());
-}
-}
-
-namespace
-{
-/// Wait this long before retrying automatically after a failed run.
-constexpr int retryCooldownSeconds = 30 * 60;
-/// Never let one automatic run follow another immediately.
-constexpr int minimumAttemptGapSeconds = 60;
-constexpr int maxLogLines = 2000;
-
-QString autostartFilePath()
-{
-    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-        + u"/autostart/org.kamora.Backup.desktop"_s;
-}
-}
-
 BackupController::BackupController(QObject *parent)
     : QObject(parent)
-    , m_config(new BackupConfig(this))
-    , m_drives(new DriveMonitor(this))
-    , m_runner(new BorgRunner(this))
+    , m_config(KSharedConfig::openConfig(u"kamorarc"_s))
+    , m_settings(new AppSettings(m_config, this))
     , m_tray(new TrayIcon(this))
 {
-    m_drives->setTargetUuid(m_config->driveUuid());
-    m_drives->setTargetContainerUuid(m_config->driveContainerUuid());
-
-    connect(m_config, &BackupConfig::changed, this, [this]() {
-        m_drives->setTargetUuid(m_config->driveUuid());
-        m_drives->setTargetContainerUuid(m_config->driveContainerUuid());
-        evaluate();
-    });
-
-    connect(m_drives, &DriveMonitor::targetAppeared, this, [this]() {
-        if (!m_config->configured()) {
-            return;
+    const KConfigGroup general = m_config->group(u"General"_s);
+    const QStringList ids = general.readEntry("Configs", QStringList());
+    const KConfigGroup backups = m_config->group(u"Backups"_s);
+    bool healed = false;
+    for (const QString &id : ids) {
+        // A configuration that was added but never saved left an id behind and
+        // no group to go with it. There is nothing in it to keep.
+        if (!backups.hasGroup(id)) {
+            healed = true;
+            m_nextId = qMax(m_nextId, id.toInt() + 1);
+            continue;
         }
-        appendLog(i18n("Backup drive connected: %1", m_config->driveDisplay()));
-        evaluate();
-    });
-    connect(m_drives, &DriveMonitor::targetVanished, this, [this]() {
-        if (m_config->configured()) {
-            appendLog(i18n("Backup drive disconnected"));
-        }
-        evaluate();
-    });
-    connect(m_drives, &DriveMonitor::targetChanged, this, &BackupController::statusChanged);
+        BackupPlan *plan = createPlan(id);
+        m_plans.append(plan);
+        m_nextId = qMax(m_nextId, id.toInt() + 1);
+    }
+    if (healed) {
+        savePlanList();
+    }
 
-    connect(m_drives, &DriveMonitor::mountFinished, this, [this](bool ok, const QString &text) {
-        if (ok) {
-            appendLog(i18n("Drive mounted at %1", text));
-        } else {
-            appendLog(i18n("Mounting failed: %1", text));
-            Q_EMIT message(i18n("Mounting the backup drive failed: %1", text), true);
-        }
-        if (m_startWhenMounted) {
-            m_startWhenMounted = false;
-            if (ok) {
-                beginBackup();
-            }
-        }
-        evaluate();
-    });
-    connect(m_drives, &DriveMonitor::unmountFinished, this, [this](bool ok, const QString &text) {
-        if (ok) {
-            appendLog(i18n("Drive unmounted, it is safe to unplug it"));
-        } else {
-            appendLog(i18n("Unmounting failed: %1", text));
-            Q_EMIT message(i18n("Unmounting the drive failed: %1", text), true);
-        }
-        evaluate();
-    });
-
-    connect(m_runner, &BorgRunner::logLine, this, &BackupController::appendLog);
-    connect(m_runner, &BorgRunner::finished, this, &BackupController::onRunFinished);
-    connect(m_runner, &BorgRunner::runningChanged, this, &BackupController::evaluate);
-    connect(m_runner, &BorgRunner::progressChanged, this, [this]() {
-        m_tray->setState(trayState(), m_runner->progressText());
-        Q_EMIT statusChanged();
-    });
-
-    connect(m_tray, &TrayIcon::backupRequested, this, &BackupController::startBackup);
     connect(m_tray, &TrayIcon::showWindowRequested, this, &BackupController::showWindow);
-    connect(m_tray, &TrayIcon::configureRequested, this, &BackupController::requestConfigure);
     connect(m_tray, &TrayIcon::quitRequested, this, &BackupController::quitApplication);
-
-    connect(&m_listProcess, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus) {
-        QVariantList archives;
-        if (exitCode <= 1) {
-            const QJsonDocument document = QJsonDocument::fromJson(m_listProcess.readAllStandardOutput());
-            const QJsonArray entries = document.object().value(u"archives"_s).toArray();
-            for (const QJsonValue &entry : entries) {
-                const QJsonObject object = entry.toObject();
-                archives.prepend(QVariantMap{
-                    {u"name"_s, object.value(u"name"_s).toString()},
-                    {u"time"_s, object.value(u"time"_s).toString()},
-                });
-            }
-        }
-        m_archives = archives;
-        Q_EMIT archivesChanged();
-
-        if (m_unmountWhenListed) {
-            m_unmountWhenListed = false;
-            m_drives->unmountTarget();
-        }
-    });
 
     // A minute is fine: due-ness only changes on the scale of hours.
     m_tick.setInterval(60 * 1000);
-    connect(&m_tick, &QTimer::timeout, this, &BackupController::evaluate);
+    connect(&m_tick, &QTimer::timeout, this, [this]() {
+        for (BackupPlan *plan : std::as_const(m_plans)) {
+            plan->evaluate();
+        }
+        evaluate();
+    });
     m_tick.start();
 
-    applyAutostart();
+    for (BackupPlan *plan : std::as_const(m_plans)) {
+        plan->evaluate();
+    }
     evaluate();
-    refreshArchives();
 }
 
-BackupConfig *BackupController::config() const
+BackupPlan *BackupController::createPlan(const QString &id)
 {
-    return m_config;
+    auto *plan = new BackupPlan(new BackupConfig(m_config, id), this);
+    connectPlan(plan);
+    return plan;
 }
 
-DriveMonitor *BackupController::drives() const
+void BackupController::connectPlan(BackupPlan *plan)
 {
-    return m_drives;
+    connect(plan, &BackupPlan::statusChanged, this, &BackupController::evaluate);
+    connect(plan, &BackupPlan::startRequested, this, [this, plan]() {
+        onStartRequested(plan);
+    });
+    // A configuration reaches the stored list once it has been saved, so an
+    // abandoned one leaves nothing behind.
+    connect(plan, &BackupPlan::configurationSaved, this, &BackupController::savePlanList);
+    connect(plan, &BackupPlan::message, this, [this, plan](const QString &text, bool error) {
+        if (m_plans.size() > 1) {
+            Q_EMIT message(i18nc("message from one plan", "%1: %2",
+                                 plan->config()->displayName(), text),
+                           error);
+        } else {
+            Q_EMIT message(text, error);
+        }
+    });
+    connect(plan->config(), &BackupConfig::changed, this, &BackupController::statusChanged);
 }
 
-BorgRunner *BackupController::runner() const
+void BackupController::savePlanList()
 {
-    return m_runner;
-}
-
-QDateTime BackupController::dueSince() const
-{
-    const QDateTime last = m_config->lastBackup();
-    if (!last.isValid()) {
-        return QDateTime::currentDateTime();
+    QStringList ids;
+    ids.reserve(m_plans.size());
+    for (const BackupPlan *plan : std::as_const(m_plans)) {
+        ids << plan->config()->id();
     }
-    return last.addSecs(qint64(m_config->intervalHours()) * 3600);
+    KConfigGroup general = m_config->group(u"General"_s);
+    general.writeEntry("Configs", ids);
+    m_config->sync();
 }
 
-bool BackupController::due() const
+AppSettings *BackupController::settings() const
 {
-    if (!m_config->configured()) {
-        return false;
+    return m_settings;
+}
+
+QList<QObject *> BackupController::plans() const
+{
+    QList<QObject *> result;
+    result.reserve(m_plans.size());
+    for (BackupPlan *plan : m_plans) {
+        result.append(plan);
     }
-    return dueSince() <= QDateTime::currentDateTime();
+    return result;
+}
+
+int BackupController::planCount() const
+{
+    return m_plans.size();
+}
+
+bool BackupController::configured() const
+{
+    for (const BackupPlan *plan : m_plans) {
+        if (plan->config()->configured()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool BackupController::anyRunning() const
+{
+    for (const BackupPlan *plan : m_plans) {
+        if (plan->active()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool BackupController::borgAvailable() const
@@ -193,503 +138,132 @@ bool BackupController::borgAvailable() const
     return !BorgRunner::borgExecutable().isEmpty();
 }
 
-bool BackupController::canBackupNow() const
+QString BackupController::summary() const
 {
-    return m_config->configured() && borgAvailable() && !m_runner->running() && !m_drives->busy();
-}
-
-QString BackupController::repositoryPath() const
-{
-    const QString mountPoint = m_drives->targetMountPoint();
-    if (mountPoint.isEmpty()) {
-        return QString();
+    if (m_plans.isEmpty()) {
+        return i18n("No backup plans yet");
     }
-    return QDir(mountPoint).filePath(m_config->repoPath());
-}
-
-bool BackupController::repositoryExists() const
-{
-    const QString repository = repositoryPath();
-    return !repository.isEmpty() && QFileInfo::exists(QDir(repository).filePath(u"config"_s));
-}
-
-QUrl BackupController::browseStartFolder() const
-{
-    const QString mountPoint = m_drives->targetMountPoint();
-    if (!mountPoint.isEmpty()) {
-        return QUrl::fromLocalFile(mountPoint);
-    }
-    // Removable media land here on this distribution; fall back to the home
-    // directory when nothing is mounted.
-    for (const QString &base : {u"/run/media/"_s, u"/media/"_s}) {
-        const QString candidate = base + QDir::home().dirName();
-        if (QFileInfo::exists(candidate)) {
-            return QUrl::fromLocalFile(candidate);
+    int running = 0;
+    int failed = 0;
+    int due = 0;
+    int idle = 0;
+    for (const BackupPlan *plan : m_plans) {
+        switch (plan->state()) {
+        case BackupPlan::Running:
+            ++running;
+            break;
+        case BackupPlan::Failed:
+            ++failed;
+            break;
+        case BackupPlan::Due:
+            ++due;
+            break;
+        case BackupPlan::Idle:
+            ++idle;
+            break;
+        case BackupPlan::Disabled:
+            break;
         }
     }
-    return QUrl::fromLocalFile(QDir::homePath());
+    if (running > 0) {
+        return i18np("One backup is running", "%1 backups are running", running);
+    }
+    if (failed > 0) {
+        return i18np("One backup failed", "%1 backups failed", failed);
+    }
+    if (due > 0) {
+        return i18np("One backup is due", "%1 backups are due", due);
+    }
+    if (idle == 0) {
+        // Every configuration is switched off, or none is finished being set up.
+        return i18n("No backup is watching for a drive");
+    }
+    return i18np("The backup is up to date", "All %1 backups are up to date", idle);
 }
 
-QString BackupController::headline() const
+BackupPlan *BackupController::addPlan()
 {
-    if (m_runner->running()) {
-        return i18n("Backing up…");
-    }
-    if (m_config->lastStatus() == u"failed"_s) {
-        return i18n("Last backup failed");
-    }
-    if (due()) {
-        return i18n("Backup due");
-    }
-    return i18n("Backup up to date");
+    const QString id = QString::number(m_nextId++);
+    BackupPlan *plan = createPlan(id);
+    m_plans.append(plan);
+    Q_EMIT plansChanged();
+    evaluate();
+    return plan;
 }
 
-QString BackupController::subtitle() const
+void BackupController::removePlan(BackupPlan *plan)
 {
-    if (m_runner->running()) {
-        return m_runner->progressText().isEmpty() ? m_runner->stepLabel() : m_runner->progressText();
+    if (!plan || !m_plans.contains(plan)) {
+        return;
     }
-    if (m_config->lastStatus() == u"failed"_s && !m_config->lastError().isEmpty()) {
-        return m_config->lastError();
+    plan->cancel();
+    plan->config()->erase();
+    m_plans.removeAll(plan);
+    savePlanList();
+    plan->deleteLater();
+    Q_EMIT plansChanged();
+    evaluate();
+}
+
+void BackupController::discardIfUnconfigured(BackupPlan *plan)
+{
+    if (plan && !plan->config()->configured()) {
+        removePlan(plan);
     }
-    if (due()) {
-        if (!m_drives->targetPresent()) {
-            return i18n("Connect %1 and the backup starts on its own",
-                        m_config->driveLabel().isEmpty() ? m_config->driveDisplay() : m_config->driveLabel());
+}
+
+void BackupController::cancelAll()
+{
+    for (BackupPlan *plan : std::as_const(m_plans)) {
+        if (plan->active()) {
+            plan->cancel();
         }
-        return m_config->backupOnConnect() ? i18n("The drive is connected, starting shortly")
-                                           : i18n("The drive is connected, start the backup when you like");
     }
-    return i18n("Next backup %1", nextBackupText());
+    evaluate();
 }
 
-QString BackupController::statusIcon() const
+void BackupController::onStartRequested(BackupPlan *plan)
 {
-    if (m_runner->running()) {
-        return u"state-sync"_s;
+    if (!m_plans.contains(plan) || plan->active()) {
+        return;
     }
-    if (m_config->lastStatus() == u"failed"_s) {
-        return u"state-error"_s;
+    // One backup at a time. Refusing is silent on purpose: the only requests
+    // that get here while one is running are automatic ones - the buttons are
+    // disabled meanwhile - and they ask again on the next tick anyway.
+    if (anyRunning()) {
+        return;
     }
-    if (due()) {
-        return u"state-warning"_s;
-    }
-    return u"state-ok"_s;
-}
-
-QString BackupController::lastBackupText() const
-{
-    const QDateTime last = m_config->lastBackup();
-    if (!last.isValid()) {
-        return i18n("never");
-    }
-    return KFormat().formatRelativeDateTime(last, QLocale::ShortFormat);
-}
-
-QString BackupController::nextBackupText() const
-{
-    if (!m_config->configured()) {
-        return QString();
-    }
-    if (due()) {
-        return i18n("now");
-    }
-    const qint64 seconds = QDateTime::currentDateTime().secsTo(dueSince());
-    return i18n("in %1", KFormat().formatSpelloutDuration(seconds * 1000));
-}
-
-QString BackupController::logText() const
-{
-    return m_log.join(u'\n');
-}
-
-QVariantList BackupController::archives() const
-{
-    return m_archives;
-}
-
-void BackupController::appendLog(const QString &line)
-{
-    const QString stamped = QDateTime::currentDateTime().toString(u"HH:mm:ss"_s) + u"  "_s + line;
-    m_log.append(stamped);
-    while (m_log.size() > maxLogLines) {
-        m_log.removeFirst();
-    }
-    Q_EMIT logChanged();
-}
-
-void BackupController::clearLog()
-{
-    m_log.clear();
-    Q_EMIT logChanged();
+    plan->start();
+    evaluate();
 }
 
 TrayIcon::State BackupController::trayState() const
 {
-    if (m_runner->running()) {
-        return TrayIcon::Running;
+    TrayIcon::State state = TrayIcon::Idle;
+    for (const BackupPlan *plan : m_plans) {
+        switch (plan->state()) {
+        case BackupPlan::Running:
+            return TrayIcon::Running;
+        case BackupPlan::Failed:
+            state = TrayIcon::Failed;
+            break;
+        case BackupPlan::Due:
+            if (state != TrayIcon::Failed) {
+                state = TrayIcon::Due;
+            }
+            break;
+        case BackupPlan::Idle:
+        case BackupPlan::Disabled:
+            break;
+        }
     }
-    if (m_config->configured() && m_config->lastStatus() == u"failed"_s) {
-        return TrayIcon::Failed;
-    }
-    if (due()) {
-        return TrayIcon::Due;
-    }
-    return TrayIcon::Idle;
+    return state;
 }
 
 void BackupController::evaluate()
 {
-    const TrayIcon::State state = trayState();
-    QString tip;
-    switch (state) {
-    case TrayIcon::Running:
-        tip = m_runner->progressText();
-        break;
-    case TrayIcon::Failed:
-        tip = m_config->lastError();
-        break;
-    case TrayIcon::Due:
-        tip = m_drives->targetPresent() ? i18n("The backup drive is connected")
-                                        : i18n("Connect the backup drive to run it");
-        break;
-    case TrayIcon::Idle:
-        tip = i18n("Last backup: %1", lastBackupText());
-        break;
-    }
-    m_tray->setState(state, tip);
-    m_tray->setBackupActionEnabled(canBackupNow());
-
-    const bool nowDue = due();
-    if (nowDue && !m_wasDue && !m_runner->running()) {
-        notify(u"backupDue"_s, i18n("Backup due"),
-               m_drives->targetPresent() ? i18n("The backup drive is connected.")
-                                         : i18n("Connect %1 to run the backup.", m_config->driveDisplay()));
-    }
-    m_wasDue = nowDue;
-
+    m_tray->setState(trayState(), summary());
     Q_EMIT statusChanged();
-    maybeStartAutomatically();
-}
-
-void BackupController::maybeStartAutomatically()
-{
-    if (!m_config->configured() || !m_config->backupOnConnect()) {
-        return;
-    }
-    if (!due() || m_runner->running() || m_startWhenMounted || !borgAvailable()) {
-        return;
-    }
-    if (!m_drives->targetPresent()) {
-        return;
-    }
-    if (m_lastAttempt.isValid()) {
-        const qint64 sinceAttempt = m_lastAttempt.secsTo(QDateTime::currentDateTime());
-        // Never chain two automatic runs back to back, and let a failed one
-        // rest before trying again.
-        if (sinceAttempt < minimumAttemptGapSeconds) {
-            return;
-        }
-        if (m_config->lastStatus() == u"failed"_s && sinceAttempt < retryCooldownSeconds) {
-            return;
-        }
-    }
-    appendLog(i18n("Backup is due and the drive is available, starting automatically"));
-    startBackup();
-}
-
-void BackupController::startBackup()
-{
-    if (!m_config->configured()) {
-        Q_EMIT message(i18n("Set up a backup configuration first"), true);
-        return;
-    }
-    if (!borgAvailable()) {
-        Q_EMIT message(i18n("borg is not installed. Install the borgbackup package to run backups."), true);
-        return;
-    }
-    if (m_runner->running()) {
-        return;
-    }
-    if (!m_drives->targetPresent()) {
-        Q_EMIT message(i18n("The backup drive is not connected"), true);
-        return;
-    }
-
-    m_lastAttempt = QDateTime::currentDateTime();
-
-    if (!m_drives->targetMounted()) {
-        appendLog(i18n("Mounting the backup drive…"));
-        m_startWhenMounted = true;
-        m_drives->mountTarget();
-        Q_EMIT statusChanged();
-        return;
-    }
-    beginBackup();
-}
-
-void BackupController::beginBackup()
-{
-    const QString repository = repositoryPath();
-    if (repository.isEmpty()) {
-        Q_EMIT message(i18n("The backup drive is not mounted"), true);
-        return;
-    }
-
-    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    environment.insert(u"BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK"_s, u"yes"_s);
-    // The mount point changes between sessions, which borg would flag as a move.
-    environment.insert(u"BORG_RELOCATED_REPO_ACCESS_IS_OK"_s, u"yes"_s);
-    environment.insert(u"BORG_HOSTNAME_IS_UNIQUE"_s, u"yes"_s);
-    if (m_config->encryption() != u"none"_s) {
-        const QString passphrase = PassphraseStore::lookup(m_config->repoId());
-        if (passphrase.isEmpty()) {
-            Q_EMIT message(i18n("No passphrase stored for this repository"), true);
-            return;
-        }
-        environment.insert(u"BORG_PASSPHRASE"_s, passphrase);
-    }
-
-    // A repository that is not the configured one must not be written to, and
-    // a missing one must not be silently replaced with an empty repository.
-    const QString expectedId = m_config->borgRepoId();
-    if (!expectedId.isEmpty()) {
-        const QString actualId = readBorgRepositoryId(repository);
-        if (actualId.isEmpty()) {
-            const QString why =
-                i18n("The backup repository is no longer at %1. Nothing was backed up, so the "
-                     "existing archives are not replaced by an empty repository. Check the "
-                     "drive, or set the repository up again to start a new one.",
-                     repository);
-            appendLog(why);
-            m_config->recordRun(u"failed"_s, QString(), why);
-            Q_EMIT message(why, true);
-            evaluate();
-            return;
-        }
-        if (actualId != expectedId) {
-            const QString why =
-                i18n("The repository at %1 is a different one than Kamora was set up with. "
-                     "Nothing was backed up. Set the repository up again if this is the one "
-                     "you want to use now.",
-                     repository);
-            appendLog(why);
-            m_config->recordRun(u"failed"_s, QString(), why);
-            Q_EMIT message(why, true);
-            evaluate();
-            return;
-        }
-    }
-
-    QList<BorgStep> steps;
-
-    const bool repositoryExists = QFileInfo::exists(QDir(repository).filePath(u"config"_s));
-    if (!repositoryExists) {
-        QDir().mkpath(repository);
-        steps.append(BorgStep{i18n("Creating the repository"),
-                              {u"init"_s, u"--log-json"_s, u"--encryption"_s, m_config->encryption(), repository},
-                              false});
-    }
-
-    QStringList createArgs{
-        u"create"_s,
-        u"--json"_s,
-        u"--log-json"_s,
-        u"--progress"_s,
-        u"--stats"_s,
-        u"--exclude-caches"_s,
-        u"--compression"_s,
-        m_config->compression(),
-    };
-    const auto excludes = m_config->excludePatterns();
-    for (const QString &pattern : excludes) {
-        createArgs << u"--exclude"_s << pattern;
-    }
-    createArgs << repository + u"::{hostname}-{now:%Y-%m-%d_%H-%M-%S}"_s;
-    createArgs << m_config->includePaths();
-    steps.append(BorgStep{i18n("Creating the archive"), createArgs, true});
-
-    if (m_config->keepDaily() > 0 || m_config->keepWeekly() > 0 || m_config->keepMonthly() > 0) {
-        QStringList pruneArgs{u"prune"_s, u"--log-json"_s, u"--progress"_s, u"--list"_s};
-        if (m_config->keepDaily() > 0) {
-            pruneArgs << u"--keep-daily"_s << QString::number(m_config->keepDaily());
-        }
-        if (m_config->keepWeekly() > 0) {
-            pruneArgs << u"--keep-weekly"_s << QString::number(m_config->keepWeekly());
-        }
-        if (m_config->keepMonthly() > 0) {
-            pruneArgs << u"--keep-monthly"_s << QString::number(m_config->keepMonthly());
-        }
-        pruneArgs << repository;
-        steps.append(BorgStep{i18n("Removing old archives"), pruneArgs, false});
-        steps.append(BorgStep{i18n("Compacting the repository"),
-                              {u"compact"_s, u"--log-json"_s, u"--progress"_s, repository},
-                              false});
-    }
-
-    appendLog(i18n("Backing up to %1", repository));
-    m_runner->run(steps, environment);
-    Q_EMIT statusChanged();
-}
-
-void BackupController::cancelBackup()
-{
-    m_startWhenMounted = false;
-    m_runner->cancel();
-}
-
-void BackupController::onRunFinished(bool ok, const QString &text, const QString &archiveName)
-{
-    appendLog(text);
-    m_config->recordRun(ok ? u"ok"_s : u"failed"_s, archiveName, ok ? QString() : text);
-
-    if (ok && m_config->borgRepoId().isEmpty()) {
-        // First run against this repository: remember what borg calls it.
-        const QString id = readBorgRepositoryId(repositoryPath());
-        if (!id.isEmpty()) {
-            m_config->setBorgRepoId(id);
-            m_config->save();
-            appendLog(i18n("Repository identified as %1", id));
-        }
-    }
-
-    if (ok) {
-        notify(u"backupFinished"_s, i18n("Backup finished"),
-               archiveName.isEmpty() ? text : i18n("Created archive %1", archiveName));
-    } else {
-        notify(u"backupFailed"_s, i18n("Backup failed"), text);
-    }
-    Q_EMIT message(text, !ok);
-
-    // Read the archive list before releasing the drive.
-    m_unmountWhenListed = ok && m_config->unmountAfter();
-    refreshArchives();
-    if (!m_unmountWhenListed) {
-        evaluate();
-    }
-}
-
-QVariantMap BackupController::selectRepositoryFolder(const QUrl &folder)
-{
-    const QVariantMap resolved = m_drives->resolvePath(folder);
-    if (!resolved.value(u"found"_s).toBool()) {
-        Q_EMIT message(i18n("That folder is not on a mounted drive"), true);
-        return resolved;
-    }
-
-    // A different folder or drive is a different repository; the id is learned
-    // again on the next successful run.
-    m_config->setBorgRepoId(QString());
-    m_config->setDriveUuid(resolved.value(u"uuid"_s).toString());
-    m_config->setDriveContainerUuid(resolved.value(u"containerUuid"_s).toString());
-    m_config->setDriveLabel(resolved.value(u"label"_s).toString());
-    m_config->setDriveDisplay(resolved.value(u"display"_s).toString());
-    m_config->setDriveDevice(resolved.value(u"device"_s).toString());
-    m_config->setRepoPath(resolved.value(u"relativePath"_s).toString());
-    return resolved;
-}
-
-void BackupController::saveConfiguration(const QString &passphrase)
-{
-    m_config->commit();
-    if (m_config->encryption() != u"none"_s && !passphrase.isEmpty()) {
-        if (!PassphraseStore::store(m_config->repoId(), passphrase)) {
-            Q_EMIT message(i18n("The passphrase could not be saved"), true);
-        }
-    }
-    m_drives->setTargetUuid(m_config->driveUuid());
-    m_drives->setTargetContainerUuid(m_config->driveContainerUuid());
-    applyAutostart();
-    appendLog(i18n("Configuration saved"));
-    evaluate();
-    refreshArchives();
-}
-
-void BackupController::forgetConfiguration()
-{
-    PassphraseStore::remove(m_config->repoId());
-    m_config->forget();
-    m_archives.clear();
-    Q_EMIT archivesChanged();
-    applyAutostart();
-    evaluate();
-}
-
-void BackupController::mountDrive()
-{
-    m_drives->mountTarget();
-}
-
-void BackupController::unmountDrive()
-{
-    m_drives->unmountTarget();
-}
-
-void BackupController::refreshArchives()
-{
-    if (m_listProcess.state() != QProcess::NotRunning || !borgAvailable()) {
-        return;
-    }
-    const QString repository = repositoryPath();
-    if (repository.isEmpty() || !QFileInfo::exists(QDir(repository).filePath(u"config"_s))) {
-        if (!m_archives.isEmpty()) {
-            m_archives.clear();
-            Q_EMIT archivesChanged();
-        }
-        if (m_unmountWhenListed) {
-            m_unmountWhenListed = false;
-            m_drives->unmountTarget();
-        }
-        return;
-    }
-
-    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    environment.insert(u"BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK"_s, u"yes"_s);
-    environment.insert(u"BORG_RELOCATED_REPO_ACCESS_IS_OK"_s, u"yes"_s);
-    if (m_config->encryption() != u"none"_s) {
-        environment.insert(u"BORG_PASSPHRASE"_s, PassphraseStore::lookup(m_config->repoId()));
-    }
-    m_listProcess.setProcessEnvironment(environment);
-    m_listProcess.start(BorgRunner::borgExecutable(),
-                        {u"list"_s, u"--json"_s, u"--last"_s, u"20"_s, repository});
-}
-
-void BackupController::openRepositoryFolder()
-{
-    const QString repository = repositoryPath();
-    if (!repository.isEmpty()) {
-        QDesktopServices::openUrl(QUrl::fromLocalFile(repository));
-    }
-}
-
-void BackupController::applyAutostart()
-{
-    const QString path = autostartFilePath();
-    if (!m_config->configured() || !m_config->autostart()) {
-        QFile::remove(path);
-        return;
-    }
-
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-        return;
-    }
-    const QString contents = u"[Desktop Entry]\n"
-                             "Type=Application\n"
-                             "Name=Kamora Backup\n"
-                             "Comment=Scheduled borg backups to a USB drive\n"
-                             "Icon=backup\n"
-                             "Exec=%1 --background\n"
-                             "Terminal=false\n"
-                             "X-GNOME-Autostart-enabled=true\n"
-                             "X-KDE-autostart-after=panel\n"_s.arg(QCoreApplication::applicationFilePath());
-    file.write(contents.toUtf8());
-}
-
-void BackupController::notify(const QString &eventId, const QString &title, const QString &text)
-{
-    KNotification::event(eventId, title, text, u"backup"_s, KNotification::CloseOnTimeout);
 }
 
 void BackupController::setWindow(QWindow *window)
@@ -708,23 +282,8 @@ void BackupController::showWindow()
     m_window->requestActivate();
 }
 
-void BackupController::requestConfigure()
-{
-    showWindow();
-    Q_EMIT configureRequested();
-}
-
-void BackupController::hideWindow()
-{
-    if (m_window) {
-        m_window->hide();
-    }
-}
-
 void BackupController::quitApplication()
 {
-    if (m_runner->running()) {
-        m_runner->cancel();
-    }
+    cancelAll();
     QCoreApplication::quit();
 }

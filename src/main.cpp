@@ -9,8 +9,10 @@
 #include <KIconTheme>
 #include <KLocalizedString>
 
+#include "appsettings.h"
 #include "backupconfig.h"
 #include "backupcontroller.h"
+#include "backupplan.h"
 #include "borgrunner.h"
 #include "drivemonitor.h"
 
@@ -45,11 +47,7 @@ int main(int argc, char *argv[])
     QCommandLineParser parser;
     QCommandLineOption backgroundOption(u"background"_s,
                                         i18n("Start in the background, without opening the window"));
-    QCommandLineOption backupNowOption(u"backup-now"_s, i18n("Start a backup right away"));
-    QCommandLineOption configureOption(u"configure"_s, i18n("Open the configuration page"));
     parser.addOption(backgroundOption);
-    parser.addOption(backupNowOption);
-    parser.addOption(configureOption);
     about.setupCommandLine(&parser);
     parser.process(app);
     about.processCommandLine(&parser);
@@ -59,12 +57,16 @@ int main(int argc, char *argv[])
 
     BackupController controller;
 
+    qmlRegisterUncreatableType<AppSettings>("org.kamora.backup", 1, 0, "AppSettings",
+                                            u"Reached through Kamora.settings"_s);
+    qmlRegisterUncreatableType<BackupPlan>("org.kamora.backup", 1, 0, "BackupPlan",
+                                           u"Reached through Kamora.plans"_s);
     qmlRegisterUncreatableType<BackupConfig>("org.kamora.backup", 1, 0, "BackupConfig",
-                                             u"Reached through Kamora.config"_s);
+                                             u"Reached through BackupPlan.config"_s);
     qmlRegisterUncreatableType<DriveMonitor>("org.kamora.backup", 1, 0, "DriveMonitor",
-                                             u"Reached through Kamora.drives"_s);
+                                             u"Reached through BackupPlan.drives"_s);
     qmlRegisterUncreatableType<BorgRunner>("org.kamora.backup", 1, 0, "BorgRunner",
-                                           u"Reached through Kamora.runner"_s);
+                                           u"Reached through BackupPlan.runner"_s);
     qmlRegisterSingletonInstance("org.kamora.backup", 1, 0, "Kamora", &controller);
 
     QQmlApplicationEngine engine;
@@ -76,27 +78,15 @@ int main(int argc, char *argv[])
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().constFirst());
     controller.setWindow(window);
 
-    // Without a configuration there is nothing for the tray to be relevant
+    // Without a plan there is nothing for the tray to be relevant
     // about, so the window always opens on a first run.
-    if (!parser.isSet(backgroundOption) || !controller.config()->configured()) {
+    if (!parser.isSet(backgroundOption) || !controller.configured()) {
         controller.showWindow();
-    }
-    if (parser.isSet(backupNowOption)) {
-        controller.startBackup();
-    }
-    if (parser.isSet(configureOption)) {
-        controller.requestConfigure();
     }
 
     QObject::connect(&service, &KDBusService::activateRequested, &controller,
-                     [&controller](const QStringList &arguments, const QString &) {
-                         if (arguments.contains(u"--backup-now"_s)) {
-                             controller.startBackup();
-                         } else if (arguments.contains(u"--configure"_s)) {
-                             controller.requestConfigure();
-                         } else {
-                             controller.showWindow();
-                         }
+                     [&controller](const QStringList &, const QString &) {
+                         controller.showWindow();
                      });
 
     return app.exec();

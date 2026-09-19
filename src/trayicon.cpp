@@ -20,14 +20,8 @@ TrayIcon::TrayIcon(QObject *parent)
     m_item->setStatus(KStatusNotifierItem::Passive);
 
     auto *menu = new QMenu();
-    m_backupAction = menu->addAction(QIcon::fromTheme(u"backup"_s), i18n("Back Up Now"));
-    connect(m_backupAction, &QAction::triggered, this, &TrayIcon::backupRequested);
-
     QAction *open = menu->addAction(QIcon::fromTheme(u"window"_s), i18n("Open Kamora…"));
     connect(open, &QAction::triggered, this, &TrayIcon::showWindowRequested);
-
-    QAction *configure = menu->addAction(QIcon::fromTheme(u"configure"_s), i18n("Configure…"));
-    connect(configure, &QAction::triggered, this, &TrayIcon::configureRequested);
 
     menu->addSeparator();
 
@@ -47,11 +41,6 @@ TrayIcon::TrayIcon(QObject *parent)
 void TrayIcon::setAssociatedWindow(QWindow *window)
 {
     m_item->setAssociatedWindow(window);
-}
-
-void TrayIcon::setBackupActionEnabled(bool enabled)
-{
-    m_backupAction->setEnabled(enabled);
 }
 
 void TrayIcon::setState(State state, const QString &subtitle)
