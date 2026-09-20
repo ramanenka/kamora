@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
-import org.kamora.backup
+import io.github.ramanenka.kamora
 
 /**
  * Settings that apply to Kamora itself rather than to one plan.
@@ -47,7 +47,7 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
             text: "Kamora has to be running to notice that a backup drive was plugged "
-                + "in. Autostart writes ~/.config/autostart/org.kamora.Backup.desktop."
+                + "in. Autostart writes ~/.config/autostart/io.github.ramanenka.kamora.desktop."
             opacity: 0.7
             wrapMode: Text.Wrap
         }

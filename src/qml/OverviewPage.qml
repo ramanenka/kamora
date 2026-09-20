@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
-import org.kamora.backup
+import io.github.ramanenka.kamora
 
 /**
  * The list of backup plans, and the way to every other page.

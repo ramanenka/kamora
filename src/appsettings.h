@@ -35,7 +35,7 @@ Q_SIGNALS:
 private:
     void load();
     void save();
-    /// Writes or removes ~/.config/autostart/org.kamora.Backup.desktop.
+    /// Writes or removes ~/.config/autostart/io.github.ramanenka.kamora.desktop.
     void applyAutostart() const;
 
     KSharedConfig::Ptr m_config;

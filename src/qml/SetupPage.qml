@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
-import org.kamora.backup
+import io.github.ramanenka.kamora
 
 Kirigami.ScrollablePage {
     id: page

@@ -48,8 +48,8 @@ than about one backup - whether it starts at login - live under **Settings**.
   asks for that passphrase itself.
 * **Autostart** — enabled under *Settings*, where it applies to Kamora as a
   whole rather than to one backup. It writes
-  `~/.config/autostart/org.kamora.Backup.desktop`, with `--background` unless
-  you ask for the window, so Kamora starts into the tray at login.
+  `~/.config/autostart/io.github.ramanenka.kamora.desktop`, with `--background`
+  unless you ask for the window, so Kamora starts into the tray at login.
 * **Configuration file** — `~/.config/kamorarc` keeps the application settings
   in `[General]` and one `[Backups][<id>]` group per configuration, with that
   configuration's last run in `[Backups][<id>][State]`.

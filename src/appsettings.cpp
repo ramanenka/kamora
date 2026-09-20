@@ -15,7 +15,7 @@ namespace
 QString autostartFilePath()
 {
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-        + u"/autostart/org.kamora.Backup.desktop"_s;
+        + u"/autostart/io.github.ramanenka.kamora.desktop"_s;
 }
 }
 

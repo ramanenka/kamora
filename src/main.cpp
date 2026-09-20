@@ -27,7 +27,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
     QCoreApplication::setOrganizationName(u"Kamora"_s);
-    QCoreApplication::setOrganizationDomain(u"kamora.org"_s);
+    QCoreApplication::setOrganizationDomain(u"ramanenka.github.io"_s);
     QCoreApplication::setApplicationName(u"kamora"_s);
 
     KLocalizedString::setApplicationDomain(QByteArrayLiteral("kamora"));
@@ -38,10 +38,10 @@ int main(int argc, char *argv[])
                      u"1.0"_s,
                      i18n("Scheduled borg backups to a USB drive"),
                      KAboutLicense::GPL_V3);
-    about.setDesktopFileName(u"org.kamora.Backup"_s);
+    about.setDesktopFileName(u"io.github.ramanenka.kamora"_s);
     // KAboutData defaults this to kde.org, which would name the unique
     // D-Bus service org.kde.kamora instead of matching the desktop entry.
-    about.setOrganizationDomain(QByteArrayLiteral("kamora.org"));
+    about.setOrganizationDomain(QByteArrayLiteral("ramanenka.github.io"));
     KAboutData::setApplicationData(about);
 
     QCommandLineParser parser;
@@ -57,20 +57,20 @@ int main(int argc, char *argv[])
 
     BackupController controller;
 
-    qmlRegisterUncreatableType<AppSettings>("org.kamora.backup", 1, 0, "AppSettings",
+    qmlRegisterUncreatableType<AppSettings>("io.github.ramanenka.kamora", 1, 0, "AppSettings",
                                             u"Reached through Kamora.settings"_s);
-    qmlRegisterUncreatableType<BackupPlan>("org.kamora.backup", 1, 0, "BackupPlan",
+    qmlRegisterUncreatableType<BackupPlan>("io.github.ramanenka.kamora", 1, 0, "BackupPlan",
                                            u"Reached through Kamora.plans"_s);
-    qmlRegisterUncreatableType<BackupConfig>("org.kamora.backup", 1, 0, "BackupConfig",
+    qmlRegisterUncreatableType<BackupConfig>("io.github.ramanenka.kamora", 1, 0, "BackupConfig",
                                              u"Reached through BackupPlan.config"_s);
-    qmlRegisterUncreatableType<DriveMonitor>("org.kamora.backup", 1, 0, "DriveMonitor",
+    qmlRegisterUncreatableType<DriveMonitor>("io.github.ramanenka.kamora", 1, 0, "DriveMonitor",
                                              u"Reached through BackupPlan.drives"_s);
-    qmlRegisterUncreatableType<BorgRunner>("org.kamora.backup", 1, 0, "BorgRunner",
+    qmlRegisterUncreatableType<BorgRunner>("io.github.ramanenka.kamora", 1, 0, "BorgRunner",
                                            u"Reached through BackupPlan.runner"_s);
-    qmlRegisterSingletonInstance("org.kamora.backup", 1, 0, "Kamora", &controller);
+    qmlRegisterSingletonInstance("io.github.ramanenka.kamora", 1, 0, "Kamora", &controller);
 
     QQmlApplicationEngine engine;
-    engine.loadFromModule("org.kamora.backup", u"Main"_s);
+    engine.loadFromModule("io.github.ramanenka.kamora", u"Main"_s);
     if (engine.rootObjects().isEmpty()) {
         return 1;
     }

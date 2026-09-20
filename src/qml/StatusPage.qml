@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
-import org.kamora.backup
+import io.github.ramanenka.kamora
 
 /**
  * Everything about one backup plan: what it is waiting for, which

@@ -2,7 +2,7 @@
 IconName=backup
 Name=Kamora Backup
 Comment=Scheduled borg backups to a USB drive
-DesktopEntry=org.kamora.Backup
+DesktopEntry=io.github.ramanenka.kamora
 
 [Event/backupDue]
 Name=Backup due

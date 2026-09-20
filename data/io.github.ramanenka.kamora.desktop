@@ -9,6 +9,6 @@ Terminal=false
 Categories=Qt;KDE;System;Utility;Archiving;
 Keywords=backup;borg;usb;archive;
 StartupNotify=false
-X-DBUS-ServiceName=org.kamora.kamora
+X-DBUS-ServiceName=io.github.ramanenka.kamora
 X-DBUS-StartupType=Unique
 X-GNOME-UsesNotifications=true

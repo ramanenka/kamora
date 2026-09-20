@@ -1,6 +1,6 @@
 import QtQuick
 import org.kde.kirigami as Kirigami
-import org.kamora.backup
+import io.github.ramanenka.kamora
 
 Kirigami.ApplicationWindow {
     id: root

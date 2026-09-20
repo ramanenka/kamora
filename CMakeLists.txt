@@ -60,7 +60,7 @@ target_sources(kamora PRIVATE
     src/trayicon.h
 )
 
-ecm_add_qml_module(kamora URI org.kamora.backup GENERATE_PLUGIN_SOURCE)
+ecm_add_qml_module(kamora URI io.github.ramanenka.kamora GENERATE_PLUGIN_SOURCE)
 
 ecm_target_qml_sources(kamora SOURCES
     src/qml/Main.qml
@@ -93,7 +93,7 @@ target_link_libraries(kamora PRIVATE
 ecm_finalize_qml_module(kamora)
 
 install(TARGETS kamora ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
-install(PROGRAMS data/org.kamora.Backup.desktop DESTINATION ${KDE_INSTALL_APPDIR})
+install(PROGRAMS data/io.github.ramanenka.kamora.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 install(FILES data/kamora.notifyrc DESTINATION ${KDE_INSTALL_KNOTIFYRCDIR})
 
 feature_summary(WHAT ALL FATAL_ON_MISSING_REQUIRED_PACKAGES)
