@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Kamora Backup
+Name=Kamora
 GenericName=Backup
 Comment=Scheduled borg backups to a USB drive
 Exec=kamora
-Icon=backup
+Icon=io.github.ramanenka.kamora
 Terminal=false
 Categories=Qt;KDE;System;Utility;Archiving;
 Keywords=backup;borg;usb;archive;

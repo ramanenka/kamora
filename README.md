@@ -110,7 +110,7 @@ to run one.
 | `src/backupcontroller.*` | the plans, which one runs, the QML singleton `Kamora` |
 | `src/trayicon.*` | the status notifier item and its relevance states |
 | `src/qml/` | the Kirigami interface |
-| `data/` | desktop entry and notification definitions |
+| `data/` | desktop entry, application icons and notification definitions |
 
 ## Notes
 

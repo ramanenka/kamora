@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Kamora Backup application icon. The arrow turns inside the drive
+    rather than around it, which leaves the drive drawn at full size.
+
+    The drive is drive-harddisk from the Breeze icon theme unchanged,
+    (C) KDE Visual Design Group, LGPL-3.0-or-later. The arrow is in
+    the grey drive-harddisk-encrypted uses for its padlock.
+-->
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <linearGradient id="shell" gradientUnits="userSpaceOnUse" x1="32" x2="32" y1="58" y2="6">
+            <stop offset="0" stop-color="#7f8c8d"/>
+            <stop offset="1" stop-color="#afb0b3"/>
+        </linearGradient>
+        <linearGradient id="body" gradientUnits="userSpaceOnUse" x1="32" x2="32" y1="48" y2="10">
+            <stop offset="0" stop-color="#eef1f2"/>
+            <stop offset="1" stop-color="#f9fafb"/>
+        </linearGradient>
+        <linearGradient id="arrow" gradientUnits="userSpaceOnUse" x1="32" x2="32" y1="40" y2="18">
+            <stop offset="0" stop-color="#3e3e3e"/>
+            <stop offset="1" stop-color="#5c5c5c"/>
+        </linearGradient>
+    </defs>
+    <path d="M10 6h44v52H10z" fill="url(#shell)"/>
+    <path d="M47 52h7v6h-7zm-37 0h7v6h-7z" fill="#292c2f" opacity=".2"/>
+    <path d="M16 52h32v6H16z" fill="#292c2e"/>
+    <path d="M20 54h14v2H20zm16 0h8v2h-8z" fill="#f6b44d"/>
+    <path d="M23 10a9 9 0 0 0-9 9v8.535A6 6 0 0 1 16 32a6 6 0 0 1-2 4.463V42l6 6h24l6-6v-5.535A6 6 0 0 1 48 32a6 6 0 0 1 2-4.463V19a9 9 0 0 0-9-9z" fill="url(#body)"/>
+    <path d="M10 57h44v1H10z" fill="#292c2f" opacity=".4"/>
+    <path d="M 28.067 39.806 A 11.5 11.5 0 1 0 20.500 29.000" fill="none" stroke="url(#arrow)" stroke-width="3.5"/>
+    <path d="M 16.250 29.000 L 24.750 29.000 L 20.500 37.500 Z" fill="url(#arrow)"/>
+</svg>

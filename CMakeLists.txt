@@ -12,6 +12,7 @@ include(KDEInstallDirs)
 include(KDECMakeSettings)
 include(KDECompilerSettings NO_POLICY_SCOPE)
 include(ECMQmlModule)
+include(ECMInstallIcons)
 include(FeatureSummary)
 
 find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS
@@ -95,5 +96,17 @@ ecm_finalize_qml_module(kamora)
 install(TARGETS kamora ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
 install(PROGRAMS data/io.github.ramanenka.kamora.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 install(FILES data/kamora.notifyrc DESTINATION ${KDE_INSTALL_KNOTIFYRCDIR})
+ecm_install_icons(ICONS
+    data/icons/sc-apps-io.github.ramanenka.kamora.svg
+    data/icons/sc-status-io.github.ramanenka.kamora-tray.svg
+    data/icons/sc-status-io.github.ramanenka.kamora-tray-attention.svg
+    data/icons/sc-status-io.github.ramanenka.kamora-tray-sync.svg
+    data/icons/sc-status-io.github.ramanenka.kamora-tray-error.svg
+    data/icons/22-status-io.github.ramanenka.kamora-tray.svg
+    data/icons/22-status-io.github.ramanenka.kamora-tray-attention.svg
+    data/icons/22-status-io.github.ramanenka.kamora-tray-sync.svg
+    data/icons/22-status-io.github.ramanenka.kamora-tray-error.svg
+    DESTINATION ${KDE_INSTALL_ICONDIR}
+)
 
 feature_summary(WHAT ALL FATAL_ON_MISSING_REQUIRED_PACKAGES)

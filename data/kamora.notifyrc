@@ -1,5 +1,5 @@
 [Global]
-IconName=backup
+IconName=io.github.ramanenka.kamora
 Name=Kamora Backup
 Comment=Scheduled borg backups to a USB drive
 DesktopEntry=io.github.ramanenka.kamora

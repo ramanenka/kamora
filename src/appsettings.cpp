@@ -92,7 +92,7 @@ void AppSettings::applyAutostart() const
                              "Type=Application\n"
                              "Name=Kamora Backup\n"
                              "Comment=Scheduled borg backups to a USB drive\n"
-                             "Icon=backup\n"
+                             "Icon=io.github.ramanenka.kamora\n"
                              "Exec=%1%2\n"
                              "Terminal=false\n"
                              "X-GNOME-Autostart-enabled=true\n"

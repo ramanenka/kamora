@@ -14,8 +14,8 @@ TrayIcon::TrayIcon(QObject *parent)
 {
     m_item->setCategory(KStatusNotifierItem::SystemServices);
     m_item->setTitle(i18n("Kamora Backup"));
-    m_item->setIconByName(u"backup"_s);
-    m_item->setAttentionIconByName(u"state-error"_s);
+    m_item->setIconByName(u"io.github.ramanenka.kamora-tray"_s);
+    m_item->setAttentionIconByName(u"io.github.ramanenka.kamora-tray-error"_s);
     m_item->setStandardActionsEnabled(false);
     m_item->setStatus(KStatusNotifierItem::Passive);
 
@@ -54,27 +54,23 @@ void TrayIcon::setState(State state, const QString &subtitle)
     switch (state) {
     case Idle:
         m_item->setStatus(KStatusNotifierItem::Passive);
-        m_item->setIconByName(u"backup"_s);
-        m_item->setOverlayIconByName(QString());
-        m_item->setToolTip(u"backup"_s, i18n("Kamora Backup"), subtitle);
+        m_item->setIconByName(u"io.github.ramanenka.kamora-tray"_s);
+        m_item->setToolTip(u"io.github.ramanenka.kamora-tray"_s, i18n("Kamora Backup"), subtitle);
         break;
     case Due:
         m_item->setStatus(KStatusNotifierItem::Active);
-        m_item->setIconByName(u"backup"_s);
-        m_item->setOverlayIconByName(u"state-warning"_s);
-        m_item->setToolTip(u"backup"_s, i18n("Backup due"), subtitle);
+        m_item->setIconByName(u"io.github.ramanenka.kamora-tray-attention"_s);
+        m_item->setToolTip(u"io.github.ramanenka.kamora-tray-attention"_s, i18n("Backup due"), subtitle);
         break;
     case Running:
         m_item->setStatus(KStatusNotifierItem::Active);
-        m_item->setIconByName(u"backup"_s);
-        m_item->setOverlayIconByName(u"state-sync"_s);
-        m_item->setToolTip(u"backup"_s, i18n("Backing up…"), subtitle);
+        m_item->setIconByName(u"io.github.ramanenka.kamora-tray-sync"_s);
+        m_item->setToolTip(u"io.github.ramanenka.kamora-tray-sync"_s, i18n("Backing up…"), subtitle);
         break;
     case Failed:
         m_item->setStatus(KStatusNotifierItem::NeedsAttention);
-        m_item->setIconByName(u"backup"_s);
-        m_item->setOverlayIconByName(u"state-error"_s);
-        m_item->setToolTip(u"state-error"_s, i18n("Backup failed"), subtitle);
+        m_item->setIconByName(u"io.github.ramanenka.kamora-tray-error"_s);
+        m_item->setToolTip(u"io.github.ramanenka.kamora-tray-error"_s, i18n("Backup failed"), subtitle);
         break;
     }
 }
