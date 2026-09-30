@@ -557,12 +557,7 @@ void DriveMonitor::unmountTarget()
     }
 
     const Solid::Device container = encryptedContainer(m_target);
-    startTeardown(container.isValid() ? container : m_target);
-}
-
-void DriveMonitor::startTeardown(const Solid::Device &target)
-{
-    Solid::Device device = target;
+    Solid::Device device = container.isValid() ? container : m_target;
     auto *access = device.as<Solid::StorageAccess>();
     if (!access || !access->isAccessible()) {
         setBusy(false);

@@ -88,7 +88,6 @@ private:
     void startSetup(const Solid::Device &target, bool unlocking);
     /// Carries on a mount that is waiting for Solid to catch up with the drive.
     void continuePendingMount();
-    void startTeardown(const Solid::Device &target);
     void setBusy(bool value);
     static QVariantMap describe(const Solid::Device &device);
     static bool isRemovableStorage(const Solid::Device &device);
