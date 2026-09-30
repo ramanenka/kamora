@@ -12,8 +12,29 @@ Kirigami.ScrollablePage {
 
     title: plan.config.configured ? "Backup plan" : "Add backup plan"
 
+    /**
+     * A plan is only worth keeping once there is a repository behind it whose
+     * id Kamora has read, so that every later run can tell that repository
+     * from another one that turns up at the same path.
+     *
+     * An id that is already stored carries a plan that is being edited with
+     * the drive unplugged: there is nothing to look at then, and nothing to
+     * doubt either.
+     */
     readonly property bool canSave: plan.config.driveUuid.length > 0
         && plan.config.includePaths.length > 0
+        && plan.config.borgRepoId.length > 0
+        && !page.repositoryInTheWay
+
+    readonly property bool repositoryInTheWay: {
+        const state = page.plan.repositoryState;
+        return page.plan.repositoryBusy
+            || state === BackupPlan.RepositoryMissing
+            || state === BackupPlan.RepositoryCreateFailed
+            || state === BackupPlan.RepositoryOther
+            || state === BackupPlan.RepositoryEncrypted
+            || state === BackupPlan.RepositoryUnusable;
+    }
 
     /// Result of the last folder pick, used for the notes below the picker.
     property var lastPick: null
@@ -52,6 +73,8 @@ Kirigami.ScrollablePage {
             onTriggered: forgetDialog.open()
         }
     ]
+
+    Component.onCompleted: page.plan.checkRepository()
 
     FolderDialog {
         id: repositoryDialog
@@ -94,8 +117,9 @@ Kirigami.ScrollablePage {
             Layout.maximumWidth: page.fieldWidth
             visible: !page.plan.borgAvailable
             type: Kirigami.MessageType.Warning
-            text: "borg is not installed. Install the borgbackup package, otherwise "
-                + "Kamora can store the plan but not run a backup."
+            text: "borg is not installed. Install the borgbackup package: without it "
+                + "Kamora cannot look at a repository or create one, and a plan needs "
+                + "one before it can be saved."
         }
 
         QQC2.TextField {
@@ -184,6 +208,117 @@ Kirigami.ScrollablePage {
             }
             textFormat: Text.PlainText
             opacity: 0.8
+        }
+
+        QQC2.Label {
+            Kirigami.FormData.label: "Repository:"
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            // The id is 64 characters of hex with nothing to break a line at.
+            wrapMode: Text.WrapAnywhere
+            textFormat: Text.PlainText
+            opacity: 0.8
+            text: {
+                const stored = page.plan.config.borgRepoId;
+                // Without a folder there is nothing to have looked at, and the
+                // state would be DriveAway - which reads as a drive that is
+                // away rather than one that was never chosen.
+                if (page.plan.config.driveUuid.length === 0) {
+                    return "no folder chosen yet";
+                }
+                switch (page.plan.repositoryState) {
+                case BackupPlan.RepositoryChecking:
+                    return "looking at the folder…";
+                case BackupPlan.RepositoryCreating:
+                    return "creating it…";
+                case BackupPlan.RepositoryMissing:
+                    return "none in this folder yet";
+                case BackupPlan.RepositoryCreateFailed:
+                    return "could not be created";
+                case BackupPlan.RepositoryReady:
+                    return "id " + stored;
+                case BackupPlan.RepositoryOther:
+                    return "a different repository than this plan was set up with";
+                case BackupPlan.RepositoryEncrypted:
+                    return page.plan.repositoryEncryption.length > 0
+                        ? "encrypted (" + page.plan.repositoryEncryption + ")"
+                        : "encrypted";
+                case BackupPlan.RepositoryUnusable:
+                    return "cannot be read";
+                case BackupPlan.RepositoryDriveAway:
+                    return stored.length > 0
+                        ? "id " + stored + " — not checked, the drive is not mounted"
+                        : "the drive is not mounted, so the folder cannot be looked at";
+                default:
+                    return stored.length > 0 ? "id " + stored : "not looked at yet";
+                }
+            }
+        }
+
+        QQC2.Button {
+            text: "Create repository here"
+            icon.name: "folder-add"
+            visible: page.plan.repositoryState === BackupPlan.RepositoryMissing
+                || page.plan.repositoryState === BackupPlan.RepositoryCreating
+                || page.plan.repositoryState === BackupPlan.RepositoryCreateFailed
+            enabled: page.plan.borgAvailable && !page.plan.repositoryBusy
+            onClicked: page.plan.createRepository()
+        }
+
+        Kirigami.InlineMessage {
+            Kirigami.FormData.isSection: true
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            visible: page.plan.repositoryState === BackupPlan.RepositoryMissing
+            type: Kirigami.MessageType.Information
+            text: "There is no borg repository in this folder yet. Create one here and "
+                + "Kamora notes the id borg gives it, which is what lets every later "
+                + "run be sure it is writing to this repository and not another one "
+                + "that happens to sit at the same path. borg wants the folder to "
+                + "itself, so it has to be an empty one."
+        }
+
+        Kirigami.InlineMessage {
+            Kirigami.FormData.isSection: true
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            visible: page.plan.repositoryState === BackupPlan.RepositoryEncrypted
+            type: Kirigami.MessageType.Error
+            text: "This folder holds an encrypted borg repository. Kamora does not "
+                + "support encrypted repositories at the moment, so this plan cannot "
+                + "be saved with it. Choose a folder with an unencrypted repository, "
+                + "or an empty one to create a new repository in."
+        }
+
+        Kirigami.InlineMessage {
+            Kirigami.FormData.isSection: true
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            visible: page.plan.repositoryState === BackupPlan.RepositoryOther
+            type: Kirigami.MessageType.Error
+            text: "The repository in this folder is not the one this plan was set up "
+                + "with, so the plan cannot be saved as it is. Choose the folder again "
+                + "to use this repository instead — the archives made so far are in the "
+                + "other one and will not be in this."
+        }
+
+        Kirigami.InlineMessage {
+            Kirigami.FormData.isSection: true
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            visible: page.plan.repositoryState === BackupPlan.RepositoryUnusable
+            type: Kirigami.MessageType.Error
+            text: "borg could not open the repository in this folder: "
+                + page.plan.repositoryProblem
+        }
+
+        Kirigami.InlineMessage {
+            Kirigami.FormData.isSection: true
+            Layout.fillWidth: true
+            Layout.maximumWidth: page.fieldWidth
+            visible: page.plan.repositoryState === BackupPlan.RepositoryCreateFailed
+            type: Kirigami.MessageType.Error
+            text: "The repository could not be created: " + page.plan.repositoryProblem
         }
 
         QQC2.Label {

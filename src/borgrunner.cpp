@@ -9,12 +9,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace
-{
-/// borg reports failures as a whole Python traceback. The exception line at
-/// the end of it is the part worth putting in front of the user; the rest
-/// stays in the log.
-QString condenseError(const QString &message)
+QString BorgRunner::condenseMessage(const QString &message)
 {
     static const QStringList trailerKeys = {
         u"Platform:"_s, u"Linux:"_s, u"Borg:"_s, u"PID:"_s, u"CWD:"_s,
@@ -54,7 +49,6 @@ QString condenseError(const QString &message)
         candidate = candidate.left(maximumLength) + u"…"_s;
     }
     return candidate;
-}
 }
 
 BorgRunner::BorgRunner(QObject *parent)
@@ -244,7 +238,7 @@ void BorgRunner::handleJsonLine(const QByteArray &line)
         if (level == u"WARNING"_s) {
             m_sawWarning = true;
         } else if (level == u"ERROR"_s || level == u"CRITICAL"_s) {
-            m_lastError = condenseError(message);
+            m_lastError = condenseMessage(message);
         }
         Q_EMIT logLine(level + u": "_s + message);
         return;

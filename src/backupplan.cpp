@@ -30,6 +30,82 @@ QString readBorgRepositoryId(const QString &repository)
     return config.group(u"repository"_s).readEntry("id", QString());
 }
 
+/// Every borg invocation Kamora makes gets the same environment.
+QProcessEnvironment borgEnvironment()
+{
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(u"BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK"_s, u"yes"_s);
+    // The mount point changes between sessions, which borg would flag as a move.
+    environment.insert(u"BORG_RELOCATED_REPO_ACCESS_IS_OK"_s, u"yes"_s);
+    environment.insert(u"BORG_HOSTNAME_IS_UNIQUE"_s, u"yes"_s);
+    // Kamora does not work with encrypted repositories, and running into one
+    // has to fail rather than wait: borg asks for a passphrase on /dev/tty,
+    // where nothing is there to answer it and the process would hang for good.
+    // An empty passphrase, with every other source of one taken away, turns
+    // that into an ordinary error borg reports and returns from.
+    environment.insert(u"BORG_PASSPHRASE"_s, QString());
+    environment.remove(u"BORG_PASSCOMMAND"_s);
+    environment.remove(u"BORG_PASSPHRASE_FD"_s);
+    environment.remove(u"BORG_KEY_FILE"_s);
+    return environment;
+}
+
+/// The last error borg reported through --log-json.
+struct BorgFailure {
+    QString msgid;
+    QString message;
+};
+
+BorgFailure readBorgFailure(const QByteArray &standardError)
+{
+    BorgFailure failure;
+    bool haveOne = false;
+    const QList<QByteArray> lines = standardError.split('\n');
+    for (const QByteArray &line : lines) {
+        const QJsonObject object = QJsonDocument::fromJson(line).object();
+        if (object.value(u"type"_s).toString() != u"log_message"_s) {
+            continue;
+        }
+        const QString level = object.value(u"levelname"_s).toString();
+        if (level != u"ERROR"_s && level != u"CRITICAL"_s) {
+            continue;
+        }
+
+        // borg names the error it recognised, and then, when it recognised
+        // none, follows it with a whole traceback as a second error carrying no
+        // msgid at all. The first error that names itself is the one to keep -
+        // taking the last would put a page of Python in front of the user.
+        const QString msgid = object.value(u"msgid"_s).toString();
+        if (!haveOne || (failure.msgid.isEmpty() && !msgid.isEmpty())) {
+            failure.msgid = msgid;
+            failure.message = BorgRunner::condenseMessage(object.value(u"message"_s).toString());
+            haveOne = true;
+        }
+        if (!failure.msgid.isEmpty()) {
+            break;
+        }
+    }
+    return failure;
+}
+
+/**
+ * Whether borg turned a repository down because it is encrypted.
+ *
+ * An encrypted repository cannot be told apart from an unencrypted one by
+ * looking at its "config" file: the repokey modes leave a "key" entry there,
+ * but a keyfile repository keeps its key elsewhere and its config file is
+ * indistinguishable. What does give it away is that borg refuses to open it
+ * without a key, and says which way it is locked.
+ */
+bool failureMeansEncrypted(const QString &msgid)
+{
+    static const QStringList locked = {
+        u"PassphraseWrong"_s,      u"NoPassphraseFailure"_s, u"PasscommandFailure"_s,
+        u"KeyfileNotFoundError"_s, u"KeyfileInvalidError"_s, u"RepoKeyNotFoundError"_s,
+    };
+    return locked.contains(msgid);
+}
+
 /// Wait this long before retrying automatically after a failed run.
 constexpr int retryCooldownSeconds = 30 * 60;
 /// Never let one automatic run follow another immediately.
@@ -60,12 +136,14 @@ BackupPlan::BackupPlan(BackupConfig *config, QObject *parent)
         }
         appendLog(i18n("Backup drive connected: %1", m_config->driveDisplay()));
         evaluate();
+        checkRepository();
     });
     connect(m_drives, &DriveMonitor::targetVanished, this, [this]() {
         if (m_config->configured()) {
             appendLog(i18n("Backup drive disconnected"));
         }
         evaluate();
+        checkRepository();
     });
     connect(m_drives, &DriveMonitor::targetChanged, this, &BackupPlan::statusChanged);
 
@@ -87,6 +165,7 @@ BackupPlan::BackupPlan(BackupConfig *config, QObject *parent)
             }
         }
         evaluate();
+        checkRepository();
     });
     connect(m_drives, &DriveMonitor::unmountFinished, this, [this](bool ok, const QString &text) {
         if (ok) {
@@ -100,12 +179,34 @@ BackupPlan::BackupPlan(BackupConfig *config, QObject *parent)
             return;
         }
         evaluate();
+        checkRepository();
     });
 
     connect(m_runner, &BorgRunner::logLine, this, &BackupPlan::appendLog);
     connect(m_runner, &BorgRunner::finished, this, &BackupPlan::onRunFinished);
     connect(m_runner, &BorgRunner::runningChanged, this, &BackupPlan::evaluate);
     connect(m_runner, &BorgRunner::progressChanged, this, &BackupPlan::statusChanged);
+
+    connect(&m_repoProcess, &QProcess::finished, this,
+            [this](int exitCode, QProcess::ExitStatus status) {
+                if (m_creatingRepository) {
+                    m_creatingRepository = false;
+                    onRepositoryCreated(exitCode, status);
+                    return;
+                }
+                onRepositoryChecked(exitCode, status);
+            });
+    // finished() never comes when borg is not there to start, so the state
+    // would otherwise be left saying the repository is still being looked at.
+    connect(&m_repoProcess, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        if (error != QProcess::FailedToStart) {
+            return;
+        }
+        const bool wasCreating = m_creatingRepository;
+        m_creatingRepository = false;
+        m_repoProblem = i18n("borg could not be started");
+        setRepositoryState(wasCreating ? RepositoryCreateFailed : RepositoryUnusable);
+    });
 
     connect(&m_listProcess, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus) {
         QVariantList archives;
@@ -126,6 +227,7 @@ BackupPlan::BackupPlan(BackupConfig *config, QObject *parent)
     });
 
     refreshArchives();
+    checkRepository();
 }
 
 BackupConfig *BackupPlan::config() const
@@ -202,6 +304,176 @@ bool BackupPlan::repositoryExists() const
 {
     const QString repository = repositoryPath();
     return !repository.isEmpty() && QFileInfo::exists(QDir(repository).filePath(u"config"_s));
+}
+
+BackupPlan::RepositoryState BackupPlan::repositoryState() const
+{
+    return m_repoState;
+}
+
+QString BackupPlan::repositoryEncryption() const
+{
+    return m_repoEncryption;
+}
+
+QString BackupPlan::repositoryProblem() const
+{
+    return m_repoProblem;
+}
+
+bool BackupPlan::repositoryBusy() const
+{
+    return m_repoState == RepositoryChecking || m_repoState == RepositoryCreating;
+}
+
+void BackupPlan::setRepositoryState(RepositoryState state)
+{
+    // The details behind a state can change while the state itself does not,
+    // so this always notifies.
+    m_repoState = state;
+    Q_EMIT repositoryChanged();
+}
+
+void BackupPlan::checkRepository()
+{
+    if (m_repoProcess.state() != QProcess::NotRunning) {
+        return;
+    }
+    // borg keeps the repository locked while it works, so asking about it
+    // during a run would only wait on that lock. concludeRun() comes back to it.
+    if (active()) {
+        return;
+    }
+
+    m_repoEncryption.clear();
+    m_repoProblem.clear();
+
+    if (!borgAvailable()) {
+        setRepositoryState(RepositoryUnknown);
+        return;
+    }
+    const QString repository = repositoryPath();
+    if (repository.isEmpty()) {
+        setRepositoryState(RepositoryDriveAway);
+        return;
+    }
+    if (!repositoryExists()) {
+        setRepositoryState(RepositoryMissing);
+        return;
+    }
+
+    setRepositoryState(RepositoryChecking);
+    m_repoProcess.setProcessEnvironment(borgEnvironment());
+    m_repoProcess.start(BorgRunner::borgExecutable(),
+                        {u"list"_s, u"--json"_s, u"--log-json"_s, u"--last"_s, u"1"_s, repository});
+    // borg must not be left waiting on input that is never going to come.
+    m_repoProcess.closeWriteChannel();
+}
+
+void BackupPlan::onRepositoryChecked(int exitCode, QProcess::ExitStatus status)
+{
+    const QByteArray output = m_repoProcess.readAllStandardOutput();
+    const BorgFailure failure = readBorgFailure(m_repoProcess.readAllStandardError());
+
+    // borg uses exit code 1 for warnings, which still leave usable output.
+    if (status == QProcess::NormalExit && exitCode <= 1) {
+        const QJsonObject root = QJsonDocument::fromJson(output).object();
+        const QString mode = root.value(u"encryption"_s).toObject().value(u"mode"_s).toString();
+        const QString id = root.value(u"repository"_s).toObject().value(u"id"_s).toString();
+
+        if (!mode.isEmpty() && mode != u"none"_s) {
+            m_repoEncryption = mode;
+            setRepositoryState(RepositoryEncrypted);
+            return;
+        }
+        if (id.isEmpty()) {
+            m_repoProblem = i18n("borg did not report an id for the repository");
+            setRepositoryState(RepositoryUnusable);
+            return;
+        }
+
+        const QString known = m_config->borgRepoId();
+        if (!known.isEmpty() && known != id) {
+            // Adopting it here would quietly point the plan at someone else's
+            // archives; choosing the folder again is what adopts a repository.
+            setRepositoryState(RepositoryOther);
+            return;
+        }
+        if (known.isEmpty()) {
+            // Noted now, written out when the configuration is saved.
+            m_config->setBorgRepoId(id);
+            appendLog(i18n("Repository identified as %1", id));
+        }
+        setRepositoryState(RepositoryReady);
+        return;
+    }
+
+    if (failureMeansEncrypted(failure.msgid)) {
+        // borg only names the mode once it can actually open the repository, so
+        // the mode stays unknown here. Guessing it from the error would get
+        // "authenticated" wrong, and borg's own wording talks about a
+        // passphrase Kamora supplied rather than anything the user did.
+        setRepositoryState(RepositoryEncrypted);
+        return;
+    }
+
+    m_repoProblem =
+        failure.message.isEmpty() ? i18n("borg exited with code %1", exitCode) : failure.message;
+    setRepositoryState(RepositoryUnusable);
+}
+
+void BackupPlan::createRepository()
+{
+    if (m_repoProcess.state() != QProcess::NotRunning || active()) {
+        return;
+    }
+    if (!borgAvailable()) {
+        Q_EMIT message(i18n("borg is not installed, so there is nothing to create the "
+                            "repository with"),
+                       true);
+        return;
+    }
+    const QString repository = repositoryPath();
+    if (repository.isEmpty()) {
+        Q_EMIT message(i18n("The backup drive is not mounted"), true);
+        return;
+    }
+    if (repositoryExists()) {
+        // Something turned up there since the last look; take that instead of
+        // running borg init over it.
+        checkRepository();
+        return;
+    }
+    if (!QDir().mkpath(repository)) {
+        m_repoProblem = i18n("The folder %1 could not be created", repository);
+        setRepositoryState(RepositoryCreateFailed);
+        return;
+    }
+
+    m_creatingRepository = true;
+    m_repoEncryption.clear();
+    m_repoProblem.clear();
+    setRepositoryState(RepositoryCreating);
+    appendLog(i18n("Creating a repository at %1", repository));
+    m_repoProcess.setProcessEnvironment(borgEnvironment());
+    m_repoProcess.start(BorgRunner::borgExecutable(),
+                        {u"init"_s, u"--log-json"_s, u"--encryption"_s, u"none"_s, repository});
+    m_repoProcess.closeWriteChannel();
+}
+
+void BackupPlan::onRepositoryCreated(int exitCode, QProcess::ExitStatus status)
+{
+    const BorgFailure failure = readBorgFailure(m_repoProcess.readAllStandardError());
+    if (status != QProcess::NormalExit || exitCode > 1) {
+        m_repoProblem =
+            failure.message.isEmpty() ? i18n("borg exited with code %1", exitCode) : failure.message;
+        appendLog(i18n("Creating the repository failed: %1", m_repoProblem));
+        setRepositoryState(RepositoryCreateFailed);
+        return;
+    }
+    appendLog(i18n("Repository created"));
+    // The id is read back out of the repository borg has just written.
+    checkRepository();
 }
 
 QUrl BackupPlan::browseStartFolder() const
@@ -435,24 +707,21 @@ void BackupPlan::beginBackup()
         return;
     }
 
-    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    environment.insert(u"BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK"_s, u"yes"_s);
-    // The mount point changes between sessions, which borg would flag as a move.
-    environment.insert(u"BORG_RELOCATED_REPO_ACCESS_IS_OK"_s, u"yes"_s);
-    environment.insert(u"BORG_HOSTNAME_IS_UNIQUE"_s, u"yes"_s);
+    const QProcessEnvironment environment = borgEnvironment();
 
     // A repository that is not the configured one must not be written to, and
     // a missing one must not be silently replaced with an empty repository.
+    // Creating one is a step of setting the plan up, never a side effect of a run.
     const QString expectedId = m_config->borgRepoId();
-    if (!expectedId.isEmpty()) {
+    {
         const QString actualId = readBorgRepositoryId(repository);
         QString why;
         if (actualId.isEmpty()) {
-            why = i18n("The backup repository is no longer at %1. Nothing was backed up, so the "
-                       "existing archives are not replaced by an empty repository. Check the "
-                       "drive, or set the repository up again to start a new one.",
+            why = i18n("There is no borg repository at %1. Nothing was backed up, so no empty "
+                       "repository is put in its place. Check the drive, or open the plan's "
+                       "settings to create a repository there.",
                        repository);
-        } else if (actualId != expectedId) {
+        } else if (!expectedId.isEmpty() && actualId != expectedId) {
             why = i18n("The repository at %1 is a different one than this backup was set up "
                        "with. Nothing was backed up. Set the repository up again if this is "
                        "the one you want to use now.",
@@ -468,14 +737,6 @@ void BackupPlan::beginBackup()
     }
 
     QList<BorgStep> steps;
-
-    const bool repositoryPresent = QFileInfo::exists(QDir(repository).filePath(u"config"_s));
-    if (!repositoryPresent) {
-        QDir().mkpath(repository);
-        steps.append(BorgStep{i18n("Creating the repository"),
-                              {u"init"_s, u"--log-json"_s, u"--encryption"_s, u"none"_s, repository},
-                              false});
-    }
 
     QStringList createArgs{
         u"create"_s,
@@ -580,6 +841,8 @@ void BackupPlan::concludeRun()
     m_finishing = false;
     m_unmountWhenListed = false;
     evaluate();
+    // Looking at the repository was held off while the run had it locked.
+    checkRepository();
 }
 
 QVariantMap BackupPlan::selectRepositoryFolder(const QUrl &folder)
@@ -598,6 +861,10 @@ QVariantMap BackupPlan::selectRepositoryFolder(const QUrl &folder)
     m_config->setDriveLabel(resolved.value(u"label"_s).toString());
     m_config->setDriveDisplay(resolved.value(u"display"_s).toString());
     m_config->setRepoPath(resolved.value(u"relativePath"_s).toString());
+
+    // Whether there is a usable repository in the chosen folder, and what its
+    // id is, is the thing the setup page now waits on before it can be saved.
+    checkRepository();
     return resolved;
 }
 
@@ -629,8 +896,7 @@ void BackupPlan::refreshArchives()
         return;
     }
     const QString repository = repositoryPath();
-    if (!borgAvailable() || repository.isEmpty()
-        || !QFileInfo::exists(QDir(repository).filePath(u"config"_s))) {
+    if (!borgAvailable() || !repositoryExists()) {
         if (!m_archives.isEmpty()) {
             m_archives.clear();
             Q_EMIT archivesChanged();
@@ -639,12 +905,10 @@ void BackupPlan::refreshArchives()
         return;
     }
 
-    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
-    environment.insert(u"BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK"_s, u"yes"_s);
-    environment.insert(u"BORG_RELOCATED_REPO_ACCESS_IS_OK"_s, u"yes"_s);
-    m_listProcess.setProcessEnvironment(environment);
+    m_listProcess.setProcessEnvironment(borgEnvironment());
     m_listProcess.start(BorgRunner::borgExecutable(),
                         {u"list"_s, u"--json"_s, u"--last"_s, u"20"_s, repository});
+    m_listProcess.closeWriteChannel();
 }
 
 void BackupPlan::openRepositoryFolder()

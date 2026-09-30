@@ -40,6 +40,15 @@ public:
     /// Absolute path of the borg executable, empty when it is not installed.
     static QString borgExecutable();
 
+    /**
+     * Boils one of borg's failures down to the line worth showing.
+     *
+     * borg reports a failure it did not recognise as a whole Python traceback;
+     * the exception at the end of it is the part that means something to the
+     * user, and the rest belongs in the log.
+     */
+    static QString condenseMessage(const QString &message);
+
 Q_SIGNALS:
     void runningChanged();
     void progressChanged();

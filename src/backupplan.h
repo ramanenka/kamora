@@ -37,6 +37,10 @@ class BackupPlan : public QObject
     Q_PROPERTY(QString nextBackupText READ nextBackupText NOTIFY statusChanged)
     Q_PROPERTY(QString repositoryPath READ repositoryPath NOTIFY statusChanged)
     Q_PROPERTY(bool repositoryExists READ repositoryExists NOTIFY statusChanged)
+    Q_PROPERTY(RepositoryState repositoryState READ repositoryState NOTIFY repositoryChanged)
+    Q_PROPERTY(QString repositoryEncryption READ repositoryEncryption NOTIFY repositoryChanged)
+    Q_PROPERTY(QString repositoryProblem READ repositoryProblem NOTIFY repositoryChanged)
+    Q_PROPERTY(bool repositoryBusy READ repositoryBusy NOTIFY repositoryChanged)
     Q_PROPERTY(QUrl browseStartFolder READ browseStartFolder NOTIFY statusChanged)
     Q_PROPERTY(bool canBackupNow READ canBackupNow NOTIFY statusChanged)
     Q_PROPERTY(bool borgAvailable READ borgAvailable CONSTANT)
@@ -53,6 +57,28 @@ public:
         Failed,
     };
     Q_ENUM(State)
+
+    /**
+     * What is known about the repository in the configured folder.
+     *
+     * Kamora insists on knowing this before a plan can be saved: a plan is
+     * only worth keeping once there is a repository behind it whose id has
+     * been read, so that every later run can tell that repository from
+     * another one that happens to sit at the same path.
+     */
+    enum RepositoryState {
+        RepositoryUnknown, ///< not looked at yet, or borg is not installed
+        RepositoryDriveAway, ///< the drive is not mounted, so there is nothing to look at
+        RepositoryChecking,
+        RepositoryCreating,
+        RepositoryCreateFailed, ///< borg init was tried and would not do it
+        RepositoryMissing, ///< the folder holds no repository; one can be created
+        RepositoryReady, ///< an unencrypted repository whose id is known
+        RepositoryOther, ///< a repository, but not the one this plan was set up with
+        RepositoryEncrypted, ///< encrypted, which Kamora does not support
+        RepositoryUnusable, ///< borg refused to open it
+    };
+    Q_ENUM(RepositoryState)
 
     /// Takes ownership of the configuration.
     explicit BackupPlan(BackupConfig *config, QObject *parent = nullptr);
@@ -73,6 +99,13 @@ public:
     QString repositoryPath() const;
     /// Whether a borg repository is already present on the mounted drive.
     bool repositoryExists() const;
+    RepositoryState repositoryState() const;
+    /// borg's name for the encryption mode, set only in the Encrypted state.
+    QString repositoryEncryption() const;
+    /// What borg said when it refused the repository, for the Unusable state.
+    QString repositoryProblem() const;
+    /// True while the repository is being looked at or created.
+    bool repositoryBusy() const;
     /// Where the folder dialog should open.
     QUrl browseStartFolder() const;
     bool canBackupNow() const;
@@ -99,6 +132,18 @@ public:
      */
     Q_INVOKABLE QVariantMap selectRepositoryFolder(const QUrl &folder);
 
+    /**
+     * Looks at the repository the configuration points at and works out
+     * whether Kamora can use it, reading its id when it can.
+     *
+     * Cheap enough to call whenever the picture may have changed - picking a
+     * folder, mounting the drive, opening the setup page.
+     */
+    Q_INVOKABLE void checkRepository();
+
+    /// Runs borg init in the chosen folder, then reads back the new id.
+    Q_INVOKABLE void createRepository();
+
     /// Commits the setup page.
     Q_INVOKABLE void saveConfiguration();
 
@@ -112,6 +157,7 @@ public:
 Q_SIGNALS:
     void statusChanged();
     void logChanged();
+    void repositoryChanged();
     void archivesChanged();
     /// Shown as an inline message on the status page.
     void message(const QString &text, bool error);
@@ -122,6 +168,10 @@ Q_SIGNALS:
 
 private:
     void maybeStartAutomatically();
+    void setRepositoryState(RepositoryState state);
+    /// Turns the finished borg list of checkRepository() into a state.
+    void onRepositoryChecked(int exitCode, QProcess::ExitStatus status);
+    void onRepositoryCreated(int exitCode, QProcess::ExitStatus status);
     void beginBackup();
     void onRunFinished(bool ok, const QString &message, const QString &archiveName);
     void appendLog(const QString &line);
@@ -136,6 +186,12 @@ private:
     DriveMonitor *m_drives;
     BorgRunner *m_runner;
     QProcess m_listProcess;
+    /// Runs the borg list of checkRepository() and the borg init of createRepository().
+    QProcess m_repoProcess;
+    RepositoryState m_repoState = RepositoryUnknown;
+    QString m_repoEncryption;
+    QString m_repoProblem;
+    bool m_creatingRepository = false;
     QStringList m_log;
     QVariantList m_archives;
     QDateTime m_lastAttempt;
