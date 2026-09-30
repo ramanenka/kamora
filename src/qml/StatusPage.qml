@@ -57,7 +57,7 @@ Kirigami.ScrollablePage {
 
         Kirigami.InlineMessage {
             Layout.fillWidth: true
-            visible: page.plan.drives.targetFilesystemChanged
+            visible: page.plan.driveMonitor.targetFilesystemChanged
             type: Kirigami.MessageType.Warning
             text: "This is the drive you configured, but it holds a different filesystem "
                 + "than it did then - it has been reformatted or restored. If the "
@@ -176,8 +176,8 @@ Kirigami.ScrollablePage {
                 Layout.maximumWidth: page.fieldWidth
 
                 Kirigami.Icon {
-                    source: !page.plan.drives.targetPresent ? "media-eject"
-                        : (page.plan.drives.targetLocked ? "lock" : "media-mount")
+                    source: !page.plan.driveMonitor.targetPresent ? "media-eject"
+                        : (page.plan.driveMonitor.targetLocked ? "lock" : "media-mount")
                     implicitWidth: Kirigami.Units.iconSizes.small
                     implicitHeight: Kirigami.Units.iconSizes.small
                 }
@@ -187,14 +187,14 @@ Kirigami.ScrollablePage {
                     Layout.preferredWidth: Kirigami.Units.gridUnit * 12
                     elide: Text.ElideMiddle
                     text: {
-                        if (!page.plan.drives.targetPresent) {
+                        if (!page.plan.driveMonitor.targetPresent) {
                             return "not connected";
                         }
-                        if (page.plan.drives.targetLocked) {
+                        if (page.plan.driveMonitor.targetLocked) {
                             return "connected, locked";
                         }
-                        return page.plan.drives.targetMounted
-                            ? "connected, mounted at " + page.plan.drives.targetMountPoint
+                        return page.plan.driveMonitor.targetMounted
+                            ? "connected, mounted at " + page.plan.driveMonitor.targetMountPoint
                             : "connected, not mounted";
                     }
                     textFormat: Text.PlainText
@@ -304,7 +304,7 @@ Kirigami.ScrollablePage {
 
         QQC2.Label {
             Layout.fillWidth: true
-            visible: page.plan.archives.length === 0 && page.plan.drives.targetMounted
+            visible: page.plan.archives.length === 0 && page.plan.driveMonitor.targetMounted
             text: page.plan.repositoryExists
                 ? "The archive list could not be read from the repository."
                 : "No repository on the drive yet — the first backup creates it."

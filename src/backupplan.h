@@ -24,7 +24,7 @@ class BackupPlan : public QObject
     Q_OBJECT
 
     Q_PROPERTY(BackupConfig *config READ config CONSTANT)
-    Q_PROPERTY(DriveMonitor *drives READ drives CONSTANT)
+    Q_PROPERTY(DriveMonitor *driveMonitor READ driveMonitor CONSTANT)
     Q_PROPERTY(BorgRunner *runner READ runner CONSTANT)
 
     Q_PROPERTY(bool due READ due NOTIFY statusChanged)
@@ -84,7 +84,7 @@ public:
     explicit BackupPlan(BackupConfig *config, QObject *parent = nullptr);
 
     BackupConfig *config() const;
-    DriveMonitor *drives() const;
+    DriveMonitor *driveMonitor() const;
     BorgRunner *runner() const;
 
     bool due() const;
@@ -181,7 +181,7 @@ private:
     void concludeRun();
 
     BackupConfig *m_config;
-    DriveMonitor *m_drives;
+    DriveMonitor *m_driveMonitor;
     BorgRunner *m_runner;
     QProcess m_listProcess;
     /// Runs the borg list of checkRepository() and the borg init of createRepository().

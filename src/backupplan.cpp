@@ -116,21 +116,21 @@ constexpr int maxLogLines = 2000;
 BackupPlan::BackupPlan(BackupConfig *config, QObject *parent)
     : QObject(parent)
     , m_config(config)
-    , m_drives(new DriveMonitor(this))
+    , m_driveMonitor(new DriveMonitor(this))
     , m_runner(new BorgRunner(this))
 {
     m_config->setParent(this);
 
-    m_drives->setTargetUuid(m_config->driveUuid());
-    m_drives->setTargetContainerUuid(m_config->driveContainerUuid());
+    m_driveMonitor->setTargetUuid(m_config->driveUuid());
+    m_driveMonitor->setTargetContainerUuid(m_config->driveContainerUuid());
 
     connect(m_config, &BackupConfig::changed, this, [this]() {
-        m_drives->setTargetUuid(m_config->driveUuid());
-        m_drives->setTargetContainerUuid(m_config->driveContainerUuid());
+        m_driveMonitor->setTargetUuid(m_config->driveUuid());
+        m_driveMonitor->setTargetContainerUuid(m_config->driveContainerUuid());
         evaluate();
     });
 
-    connect(m_drives, &DriveMonitor::targetAppeared, this, [this]() {
+    connect(m_driveMonitor, &DriveMonitor::targetAppeared, this, [this]() {
         if (!m_config->configured()) {
             return;
         }
@@ -138,16 +138,16 @@ BackupPlan::BackupPlan(BackupConfig *config, QObject *parent)
         evaluate();
         checkRepository();
     });
-    connect(m_drives, &DriveMonitor::targetVanished, this, [this]() {
+    connect(m_driveMonitor, &DriveMonitor::targetVanished, this, [this]() {
         if (m_config->configured()) {
             appendLog(i18n("Backup drive disconnected"));
         }
         evaluate();
         checkRepository();
     });
-    connect(m_drives, &DriveMonitor::targetChanged, this, &BackupPlan::statusChanged);
+    connect(m_driveMonitor, &DriveMonitor::targetChanged, this, &BackupPlan::statusChanged);
 
-    connect(m_drives, &DriveMonitor::mountFinished, this, [this](bool ok, const QString &text) {
+    connect(m_driveMonitor, &DriveMonitor::mountFinished, this, [this](bool ok, const QString &text) {
         if (ok) {
             appendLog(i18n("Drive mounted at %1", text));
         } else {
@@ -167,13 +167,13 @@ BackupPlan::BackupPlan(BackupConfig *config, QObject *parent)
         evaluate();
         checkRepository();
     });
-    connect(m_drives, &DriveMonitor::unmountFinished, this, [this](bool ok, const QString &text) {
+    connect(m_driveMonitor, &DriveMonitor::unmountFinished, this, [this](bool ok, const QString &text) {
         if (ok) {
             QString outcome;
-            if (m_drives->targetPresent()) {
-                if (m_drives->targetMounted()) {
+            if (m_driveMonitor->targetPresent()) {
+                if (m_driveMonitor->targetMounted()) {
                     outcome = i18n("Drive left as it was found, it was already in use");
-                } else if (!m_config->driveContainerUuid().isEmpty() && !m_drives->targetLocked()) {
+                } else if (!m_config->driveContainerUuid().isEmpty() && !m_driveMonitor->targetLocked()) {
                     outcome = i18n("Drive unmounted, but it is still unlocked");
                 } else {
                     outcome = i18n("Drive unmounted, it is safe to unplug it");
@@ -247,9 +247,9 @@ BackupConfig *BackupPlan::config() const
     return m_config;
 }
 
-DriveMonitor *BackupPlan::drives() const
+DriveMonitor *BackupPlan::driveMonitor() const
 {
-    return m_drives;
+    return m_driveMonitor;
 }
 
 BorgRunner *BackupPlan::runner() const
@@ -300,12 +300,12 @@ bool BackupPlan::borgAvailable() const
 
 bool BackupPlan::canBackupNow() const
 {
-    return m_config->configured() && borgAvailable() && !active() && !m_drives->busy();
+    return m_config->configured() && borgAvailable() && !active() && !m_driveMonitor->busy();
 }
 
 QString BackupPlan::repositoryPath() const
 {
-    const QString mountPoint = m_drives->targetMountPoint();
+    const QString mountPoint = m_driveMonitor->targetMountPoint();
     if (mountPoint.isEmpty()) {
         return QString();
     }
@@ -490,7 +490,7 @@ void BackupPlan::onRepositoryCreated(int exitCode, QProcess::ExitStatus status)
 
 QUrl BackupPlan::browseStartFolder() const
 {
-    const QString mountPoint = m_drives->targetMountPoint();
+    const QString mountPoint = m_driveMonitor->targetMountPoint();
     if (!mountPoint.isEmpty()) {
         return QUrl::fromLocalFile(mountPoint);
     }
@@ -549,7 +549,7 @@ QString BackupPlan::subtitle() const
         return m_config->lastError();
     }
     if (due()) {
-        if (!m_drives->targetPresent()) {
+        if (!m_driveMonitor->targetPresent()) {
             return i18n("Connect %1 and the backup starts on its own",
                         m_config->driveLabel().isEmpty() ? m_config->driveDisplay() : m_config->driveLabel());
         }
@@ -628,7 +628,7 @@ void BackupPlan::evaluate()
     const bool nowDue = due();
     if (nowDue && !m_wasDue && !active()) {
         notify(u"backupDue"_s, i18n("Backup due"),
-               m_drives->targetPresent() ? i18n("The backup drive is connected.")
+               m_driveMonitor->targetPresent() ? i18n("The backup drive is connected.")
                                          : i18n("Connect %1 to run the backup.", m_config->driveDisplay()));
     }
     m_wasDue = nowDue;
@@ -645,7 +645,7 @@ void BackupPlan::maybeStartAutomatically()
     if (!due() || active() || !borgAvailable()) {
         return;
     }
-    if (!m_drives->targetPresent()) {
+    if (!m_driveMonitor->targetPresent()) {
         return;
     }
     if (m_lastAttempt.isValid()) {
@@ -681,7 +681,7 @@ void BackupPlan::requestStart()
     if (active()) {
         return;
     }
-    if (!m_drives->targetPresent()) {
+    if (!m_driveMonitor->targetPresent()) {
         Q_EMIT message(i18n("The backup drive is not connected"), true);
         return;
     }
@@ -695,15 +695,15 @@ void BackupPlan::start()
     }
     m_lastAttempt = QDateTime::currentDateTime();
 
-    if (!m_drives->targetPresent()) {
+    if (!m_driveMonitor->targetPresent()) {
         Q_EMIT message(i18n("The backup drive is not connected"), true);
         return;
     }
 
-    if (!m_drives->targetMounted()) {
+    if (!m_driveMonitor->targetMounted()) {
         appendLog(i18n("Mounting the backup drive…"));
         m_startWhenMounted = true;
-        m_drives->mountTarget();
+        m_driveMonitor->mountTarget();
         Q_EMIT statusChanged();
         return;
     }
@@ -837,7 +837,7 @@ void BackupPlan::afterListing()
 {
     if (m_unmountWhenListed) {
         m_unmountWhenListed = false;
-        m_drives->unmountTarget();
+        m_driveMonitor->unmountTarget();
         return;
     }
     if (m_finishing) {
@@ -858,7 +858,7 @@ void BackupPlan::concludeRun()
 
 QVariantMap BackupPlan::selectRepositoryFolder(const QUrl &folder)
 {
-    const QVariantMap resolved = m_drives->resolvePath(folder);
+    const QVariantMap resolved = m_driveMonitor->resolvePath(folder);
     if (!resolved.value(u"found"_s).toBool()) {
         Q_EMIT message(i18n("That folder is not on a mounted drive"), true);
         return resolved;
@@ -882,8 +882,8 @@ QVariantMap BackupPlan::selectRepositoryFolder(const QUrl &folder)
 void BackupPlan::saveConfiguration()
 {
     m_config->commit();
-    m_drives->setTargetUuid(m_config->driveUuid());
-    m_drives->setTargetContainerUuid(m_config->driveContainerUuid());
+    m_driveMonitor->setTargetUuid(m_config->driveUuid());
+    m_driveMonitor->setTargetContainerUuid(m_config->driveContainerUuid());
     appendLog(i18n("Plan saved"));
     Q_EMIT configurationSaved();
     evaluate();

@@ -177,7 +177,7 @@ Kirigami.ScrollablePage {
                     return "—";
                 }
                 return page.plan.config.driveDisplay
-                    + (page.plan.drives.targetPresent ? " (connected)" : " (not connected)");
+                    + (page.plan.driveMonitor.targetPresent ? " (connected)" : " (not connected)");
             }
             textFormat: Text.PlainText
             elide: Text.ElideMiddle
@@ -368,7 +368,7 @@ Kirigami.ScrollablePage {
             Kirigami.FormData.isSection: true
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
-            visible: page.plan.config.driveUuid.length > 0 && !page.plan.drives.targetPresent
+            visible: page.plan.config.driveUuid.length > 0 && !page.plan.driveMonitor.targetPresent
             type: Kirigami.MessageType.Information
             text: "The drive is not connected right now. The choice stays as it is and "
                 + "Kamora will recognise the drive by its UUID when you plug it in."

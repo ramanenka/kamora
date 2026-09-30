@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
     qmlRegisterUncreatableType<BackupConfig>("io.github.ramanenka.kamora", 1, 0, "BackupConfig",
                                              u"Reached through BackupPlan.config"_s);
     qmlRegisterUncreatableType<DriveMonitor>("io.github.ramanenka.kamora", 1, 0, "DriveMonitor",
-                                             u"Reached through BackupPlan.drives"_s);
+                                             u"Reached through BackupPlan.driveMonitor"_s);
     qmlRegisterUncreatableType<BorgRunner>("io.github.ramanenka.kamora", 1, 0, "BorgRunner",
                                            u"Reached through BackupPlan.runner"_s);
     qmlRegisterSingletonInstance("io.github.ramanenka.kamora", 1, 0, "Kamora", &controller);

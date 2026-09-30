@@ -34,7 +34,7 @@ Kirigami.ApplicationWindow {
 
     function openSetup(plan): void {
         plan.config.beginEdit();
-        plan.drives.refresh();
+        plan.driveMonitor.refresh();
         pageStack.push(Qt.resolvedUrl("SetupPage.qml"), { plan: plan });
     }
 
