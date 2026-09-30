@@ -224,22 +224,6 @@ Kirigami.ScrollablePage {
 
             RowLayout {
                 QQC2.Button {
-                    text: page.plan.drives.targetLocked ? "Unlock and mount" : "Mount"
-                    icon.name: page.plan.drives.targetLocked ? "unlock" : "media-mount"
-                    visible: page.plan.drives.targetPresent && !page.plan.drives.targetMounted
-                    enabled: !page.plan.drives.busy
-                    onClicked: page.plan.mountDrive()
-                }
-
-                QQC2.Button {
-                    text: page.plan.config.driveContainerUuid.length > 0 ? "Unmount and lock" : "Unmount"
-                    icon.name: "media-eject"
-                    visible: page.plan.drives.targetMounted
-                    enabled: !page.plan.drives.busy && !page.plan.active
-                    onClicked: page.plan.unmountDrive()
-                }
-
-                QQC2.Button {
                     text: "Open repository"
                     icon.name: "folder-open"
                     visible: page.plan.repositoryPath.length > 0

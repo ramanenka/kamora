@@ -147,8 +147,6 @@ public:
     /// Commits the setup page.
     Q_INVOKABLE void saveConfiguration();
 
-    Q_INVOKABLE void mountDrive();
-    Q_INVOKABLE void unmountDrive();
     void refreshArchives();
     Q_INVOKABLE void openRepositoryFolder();
     Q_INVOKABLE void clearLog();

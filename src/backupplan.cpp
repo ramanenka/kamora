@@ -879,16 +879,6 @@ void BackupPlan::saveConfiguration()
     refreshArchives();
 }
 
-void BackupPlan::mountDrive()
-{
-    m_drives->mountTarget();
-}
-
-void BackupPlan::unmountDrive()
-{
-    m_drives->unmountTarget();
-}
-
 void BackupPlan::refreshArchives()
 {
     if (m_listProcess.state() != QProcess::NotRunning) {

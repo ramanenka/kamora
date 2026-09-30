@@ -166,14 +166,6 @@ Kirigami.ScrollablePage {
                 icon.name: "folder-open"
                 onClicked: repositoryDialog.open()
             }
-
-            QQC2.Button {
-                text: "Mount drive"
-                icon.name: "media-mount"
-                visible: page.plan.drives.targetPresent && !page.plan.drives.targetMounted
-                enabled: !page.plan.drives.busy
-                onClicked: page.plan.mountDrive()
-            }
         }
 
         QQC2.Label {
