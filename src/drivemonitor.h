@@ -67,11 +67,9 @@ public:
 
     /// Mounts the configured drive, unlocking it first if it is encrypted;
     /// emits mountFinished() when done.
-    Q_INVOKABLE void mountTarget();
+    void mountTarget();
 
-    /// Unmounts the configured drive, and locks it again if it is encrypted,
-    /// so it can be unplugged safely.
-    Q_INVOKABLE void unmountTarget();
+    void unmountTarget();
 
 Q_SIGNALS:
     void targetChanged();
@@ -90,7 +88,7 @@ private:
     void startSetup(const Solid::Device &target, bool unlocking);
     /// Carries on a mount that is waiting for Solid to catch up with the drive.
     void continuePendingMount();
-    void startTeardown(const Solid::Device &target, bool locking);
+    void startTeardown(const Solid::Device &target);
     void setBusy(bool value);
     static QVariantMap describe(const Solid::Device &device);
     static bool isRemovableStorage(const Solid::Device &device);
@@ -101,6 +99,8 @@ private:
     bool m_targetLocked = false;
     bool m_targetFilesystemChanged = false;
     bool m_busy = false;
+    bool m_unlockedByUs = false;
+    bool m_mountedByUs = false;
     bool m_mountPending = false;
     QTimer m_mountWait;
     Solid::Device m_target;

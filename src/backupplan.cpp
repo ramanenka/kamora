@@ -169,7 +169,19 @@ BackupPlan::BackupPlan(BackupConfig *config, QObject *parent)
     });
     connect(m_drives, &DriveMonitor::unmountFinished, this, [this](bool ok, const QString &text) {
         if (ok) {
-            appendLog(i18n("Drive unmounted, it is safe to unplug it"));
+            QString outcome;
+            if (m_drives->targetPresent()) {
+                if (m_drives->targetMounted()) {
+                    outcome = i18n("Drive left as it was found, it was already in use");
+                } else if (!m_config->driveContainerUuid().isEmpty() && !m_drives->targetLocked()) {
+                    outcome = i18n("Drive unmounted, but it is still unlocked");
+                } else {
+                    outcome = i18n("Drive unmounted, it is safe to unplug it");
+                }
+            }
+            if (!outcome.isEmpty()) {
+                appendLog(outcome);
+            }
         } else {
             appendLog(i18n("Unmounting failed: %1", text));
             Q_EMIT message(i18n("Unmounting the drive failed: %1", text), true);
@@ -825,7 +837,6 @@ void BackupPlan::afterListing()
 {
     if (m_unmountWhenListed) {
         m_unmountWhenListed = false;
-        // concludeRun() follows from unmountFinished().
         m_drives->unmountTarget();
         return;
     }

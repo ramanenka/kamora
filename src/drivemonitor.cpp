@@ -223,6 +223,13 @@ void DriveMonitor::updateTarget()
         const auto *volume = m_target.as<Solid::StorageVolume>();
         m_targetFilesystemChanged = volume && volume->uuid() != m_targetUuid;
     }
+
+    if (!m_targetPresent || m_targetLocked) {
+        m_unlockedByUs = false;
+        m_mountedByUs = false;
+    } else if (!targetMounted()) {
+        m_mountedByUs = false;
+    }
 }
 
 bool DriveMonitor::isRemovableStorage(const Solid::Device &device)
@@ -440,6 +447,7 @@ void DriveMonitor::continuePendingMount()
     m_mountPending = false;
     m_mountWait.stop();
     if (targetMounted()) {
+        m_mountedByUs = true;
         setBusy(false);
         Q_EMIT mountFinished(true, targetMountPoint());
         return;
@@ -505,11 +513,15 @@ void DriveMonitor::startSetup(const Solid::Device &target, bool unlocking)
                 }
                 // Unlocking only exposes the filesystem; mounting it is a
                 // second step, on the device that has just appeared.
-                if (unlocking && m_targetPresent && !m_targetLocked) {
-                    startSetup(m_target, false);
-                    return;
+                if (unlocking) {
+                    m_unlockedByUs = true;
+                    if (m_targetPresent && !m_targetLocked) {
+                        startSetup(m_target, false);
+                        return;
+                    }
                 }
                 if (targetMounted()) {
+                    m_mountedByUs = true;
                     setBusy(false);
                     Q_EMIT mountFinished(true, targetMountPoint());
                     return;
@@ -538,21 +550,21 @@ void DriveMonitor::unmountTarget()
         Q_EMIT unmountFinished(true, QString());
         return;
     }
-    startTeardown(m_target, false);
+
+    if (!m_unlockedByUs && !m_mountedByUs) {
+        Q_EMIT unmountFinished(true, QString());
+        return;
+    }
+
+    const Solid::Device container = encryptedContainer(m_target);
+    startTeardown(container.isValid() ? container : m_target);
 }
 
-void DriveMonitor::startTeardown(const Solid::Device &target, bool locking)
+void DriveMonitor::startTeardown(const Solid::Device &target)
 {
     Solid::Device device = target;
     auto *access = device.as<Solid::StorageAccess>();
     if (!access || !access->isAccessible()) {
-        // Nothing left to unmount. An unlocked container still holds the drive
-        // open, so close that too before calling it safe to unplug.
-        const Solid::Device container = encryptedContainer(device);
-        if (!locking && container.isValid() && cleartextDevice(container).isValid()) {
-            startTeardown(container, true);
-            return;
-        }
         setBusy(false);
         Q_EMIT unmountFinished(true, QString());
         return;
@@ -560,32 +572,24 @@ void DriveMonitor::startTeardown(const Solid::Device &target, bool locking)
 
     setBusy(true);
     connect(access, &Solid::StorageAccess::teardownDone, this,
-            [this, device, locking](Solid::ErrorType error, const QVariant &errorData,
-                                    const QString &udi) mutable {
+            [this, device](Solid::ErrorType error, const QVariant &errorData,
+                           const QString &udi) mutable {
                 Q_UNUSED(udi)
                 auto *finished = device.as<Solid::StorageAccess>();
                 disconnect(finished, &Solid::StorageAccess::teardownDone, this, nullptr);
                 refresh();
+                setBusy(false);
 
                 if (error != Solid::NoError) {
-                    setBusy(false);
                     Q_EMIT unmountFinished(false, errorText(error, errorData));
                     return;
                 }
-                // Unmounted, but the LUKS mapping may still be open.
-                const Solid::Device container = encryptedContainer(device);
-                if (!locking && container.isValid() && cleartextDevice(container).isValid()) {
-                    startTeardown(container, true);
-                    return;
-                }
-                setBusy(false);
                 Q_EMIT unmountFinished(true, QString());
             });
 
     if (!access->teardown()) {
         disconnect(access, &Solid::StorageAccess::teardownDone, this, nullptr);
         setBusy(false);
-        Q_EMIT unmountFinished(false, locking ? i18n("Could not start locking the drive")
-                                              : i18n("Could not start unmounting the drive"));
+        Q_EMIT unmountFinished(false, i18n("Could not start unmounting the drive"));
     }
 }
