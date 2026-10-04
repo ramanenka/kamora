@@ -14,6 +14,8 @@
 #include <KLocalizedString>
 #include <KNotification>
 
+#include "kamoraconfig.h"
+
 using namespace Qt::StringLiterals;
 
 namespace
@@ -926,5 +928,6 @@ void BackupPlan::notify(const QString &eventId, const QString &title, const QStr
     // about, so the name goes in the title.
     KNotification::event(eventId, i18nc("notification title for one plan", "%1 — %2",
                                         m_config->displayName(), title),
-                         text, u"backup"_s, KNotification::CloseOnTimeout);
+                         text, u"backup"_s, KNotification::CloseOnTimeout,
+                         QString::fromLatin1(KAMORA_BINARY_NAME));
 }

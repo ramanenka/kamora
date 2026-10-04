@@ -49,10 +49,13 @@ than about one backup - whether it starts at login - live under **Settings**.
 * **Autostart** — enabled under *Settings*, where it applies to Kamora as a
   whole rather than to one backup. It writes
   `~/.config/autostart/io.github.ramanenka.kamora.desktop`, with `--background`
-  unless you ask for the window, so Kamora starts into the tray at login.
+  unless you ask for the window, so Kamora starts into the tray at login. The
+  settings page names the file the running build writes, which is not the same
+  one for a development build.
 * **Configuration file** — `~/.config/kamorarc` keeps the application settings
   in `[General]` and one `[Backups][<id>]` group per configuration, with that
-  configuration's last run in `[Backups][<id>][State]`.
+  configuration's last run in `[Backups][<id>][State]`. A development build
+  uses `~/.config/kamoradevrc` instead.
 
 ## Building
 
@@ -68,22 +71,67 @@ sudo dnf install gcc-c++ cmake ninja-build extra-cmake-modules \
     borgbackup
 ```
 
-Then:
+There are two flavours. The release one is what gets packaged and installed
+system-wide. The development one is the same application under its own names,
+so it can be built, installed and run without disturbing a release build that
+is already on the machine - and without root, since it lives in `~/.local`.
+
+### Development
 
 ```
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$HOME/.local
+cmake -B build-dev -G Ninja -DCMAKE_BUILD_TYPE=Debug -DKAMORA_DEV=ON
+cmake --build build-dev
+cmake --install build-dev
+```
+
+`~/.local` is the default prefix for this flavour, so nothing here asks for
+root. It installs as `kamoradev` and shows up in the launcher and the
+notification settings as *Kamora DEV*, with a violet drive for its application
+icon and a wedge in the corner of its tray icons. Everything inside the window
+reads the same in both, the About box included.
+
+The app also runs straight from the build directory
+(`./build-dev/bin/kamoradev`), but notifications stay unattributed until the
+desktop entry and notifyrc are installed.
+
+### Release
+
+```
+sudo dnf install rpm-build
+packaging/build-rpm.sh
+sudo dnf install ~/rpmbuild/RPMS/x86_64/kamora-0.1-1.*.rpm
+```
+
+`packaging/build-rpm.sh` packages what is committed rather than the working
+tree, since it takes its tarball from `git archive`. To install a release build
+without the detour through a package:
+
+```
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-cmake --install build
+sudo cmake --install build
 ```
 
-That puts `kamora` in `~/.local/bin`, the desktop entry in
-`~/.local/share/applications` and the notification setup in
-`~/.local/share/knotifications6` - no root needed. Use the default prefix with
-`sudo cmake --install build` for a system-wide install instead.
+### What the two do not share
 
-The app also runs straight from the build directory (`./build/bin/kamora`), but
-notifications stay unattributed until the desktop entry and notifyrc are
-installed.
+| | release | development |
+| --- | --- | --- |
+| executable | `kamora` | `kamoradev` |
+| default prefix | `/usr` | `~/.local` |
+| launcher and notifications | Kamora | Kamora DEV |
+| desktop entry, D-Bus name, icons | `io.github.ramanenka.kamora` | `io.github.ramanenka.kamoradev` |
+| settings | `~/.config/kamorarc` | `~/.config/kamoradevrc` |
+| notification setup | `kamora.notifyrc` | `kamoradev.notifyrc` |
+
+Every one of those names comes from the `KAMORA_DEV` block at the top of
+`CMakeLists.txt`, which fills in `src/kamoraconfig.h.in` for the C++ and the
+`.in` templates in `data/` for the desktop entry and the notification setup.
+The dev flavour's icons are drawn from the release ones by
+`cmake/KamoraDevIcons.cmake`, so there is only ever one set kept by hand.
+
+Carry an existing configuration over to a development build with
+`cp ~/.config/kamorarc ~/.config/kamoradevrc`; the two never read each
+other's.
 
 ## Command line
 
@@ -111,6 +159,8 @@ to run one.
 | `src/trayicon.*` | the status notifier item and its relevance states |
 | `src/qml/` | the Kirigami interface |
 | `data/` | desktop entry, application icons and notification definitions |
+| `cmake/` | the dev flavour's icons, drawn from the release ones |
+| `packaging/` | the RPM spec for the release flavour, and a script to build it |
 
 ## Notes
 

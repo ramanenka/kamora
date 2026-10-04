@@ -15,6 +15,7 @@
 #include "backupplan.h"
 #include "borgrunner.h"
 #include "drivemonitor.h"
+#include "kamoraconfig.h"
 
 using namespace Qt::StringLiterals;
 
@@ -28,17 +29,17 @@ int main(int argc, char *argv[])
     QApplication::setQuitOnLastWindowClosed(false);
     QCoreApplication::setOrganizationName(u"Kamora"_s);
     QCoreApplication::setOrganizationDomain(u"ramanenka.github.io"_s);
-    QCoreApplication::setApplicationName(u"kamora"_s);
+    QCoreApplication::setApplicationName(QString::fromLatin1(KAMORA_BINARY_NAME));
 
     KLocalizedString::setApplicationDomain(QByteArrayLiteral("kamora"));
     QQuickStyle::setStyle(u"org.kde.desktop"_s);
 
-    KAboutData about(u"kamora"_s,
+    KAboutData about(QString::fromLatin1(KAMORA_BINARY_NAME),
                      i18n("Kamora Backup"),
-                     u"1.0"_s,
+                     u"0.1"_s,
                      i18n("Scheduled borg backups to a USB drive"),
                      KAboutLicense::GPL_V3);
-    about.setDesktopFileName(u"io.github.ramanenka.kamora"_s);
+    about.setDesktopFileName(QString::fromLatin1(KAMORA_APP_ID));
     // KAboutData defaults this to kde.org, which would name the unique
     // D-Bus service org.kde.kamora instead of matching the desktop entry.
     about.setOrganizationDomain(QByteArrayLiteral("ramanenka.github.io"));

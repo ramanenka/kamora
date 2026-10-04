@@ -1,8 +1,8 @@
 [Global]
-IconName=io.github.ramanenka.kamora
-Name=Kamora Backup
+IconName=@KAMORA_APP_ID@
+Name=@KAMORA_APP_NAME@
 Comment=Scheduled borg backups to a USB drive
-DesktopEntry=io.github.ramanenka.kamora
+DesktopEntry=@KAMORA_APP_ID@
 
 [Event/backupDue]
 Name=Backup due

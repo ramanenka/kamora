@@ -8,16 +8,9 @@
 
 #include <KConfigGroup>
 
-using namespace Qt::StringLiterals;
+#include "kamoraconfig.h"
 
-namespace
-{
-QString autostartFilePath()
-{
-    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
-        + u"/autostart/io.github.ramanenka.kamora.desktop"_s;
-}
-}
+using namespace Qt::StringLiterals;
 
 AppSettings::AppSettings(KSharedConfig::Ptr config, QObject *parent)
     : QObject(parent)
@@ -25,6 +18,12 @@ AppSettings::AppSettings(KSharedConfig::Ptr config, QObject *parent)
 {
     load();
     applyAutostart();
+}
+
+QString AppSettings::autostartFile() const
+{
+    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+        + u"/autostart/"_s + QLatin1StringView(KAMORA_APP_ID) + u".desktop"_s;
 }
 
 bool AppSettings::autostart() const
@@ -76,7 +75,7 @@ void AppSettings::save()
 
 void AppSettings::applyAutostart() const
 {
-    const QString path = autostartFilePath();
+    const QString path = autostartFile();
     if (!m_autostart) {
         QFile::remove(path);
         return;
@@ -92,7 +91,7 @@ void AppSettings::applyAutostart() const
                              "Type=Application\n"
                              "Name=Kamora Backup\n"
                              "Comment=Scheduled borg backups to a USB drive\n"
-                             "Icon=io.github.ramanenka.kamora\n"
+                             "Icon=" KAMORA_APP_ID "\n"
                              "Exec=%1%2\n"
                              "Terminal=false\n"
                              "X-GNOME-Autostart-enabled=true\n"

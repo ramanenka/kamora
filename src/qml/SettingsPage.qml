@@ -47,7 +47,7 @@ Kirigami.ScrollablePage {
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
             text: "Kamora has to be running to notice that a backup drive was plugged "
-                + "in. Autostart writes ~/.config/autostart/io.github.ramanenka.kamora.desktop."
+                + "in. Autostart writes " + Kamora.settings.autostartFile + "."
             opacity: 0.7
             wrapMode: Text.Wrap
         }

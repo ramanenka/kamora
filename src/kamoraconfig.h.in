@@ -1,0 +1,4 @@
+#pragma once
+
+#define KAMORA_APP_ID "@KAMORA_APP_ID@"
+#define KAMORA_BINARY_NAME "@KAMORA_BINARY_NAME@"

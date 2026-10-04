@@ -6,11 +6,13 @@
 #include <KConfigGroup>
 #include <KLocalizedString>
 
+#include "kamoraconfig.h"
+
 using namespace Qt::StringLiterals;
 
 BackupController::BackupController(QObject *parent)
     : QObject(parent)
-    , m_config(KSharedConfig::openConfig(u"kamorarc"_s))
+    , m_config(KSharedConfig::openConfig(QString::fromLatin1(KAMORA_BINARY_NAME "rc")))
     , m_settings(new AppSettings(m_config, this))
     , m_tray(new TrayIcon(this))
 {

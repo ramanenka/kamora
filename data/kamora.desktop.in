@@ -1,14 +1,14 @@
 [Desktop Entry]
 Type=Application
-Name=Kamora
+Name=@KAMORA_APP_NAME@
 GenericName=Backup
 Comment=Scheduled borg backups to a USB drive
-Exec=kamora
-Icon=io.github.ramanenka.kamora
+Exec=@KAMORA_BINARY_NAME@
+Icon=@KAMORA_APP_ID@
 Terminal=false
 Categories=Qt;KDE;System;Utility;Archiving;
 Keywords=backup;borg;usb;archive;
 StartupNotify=false
-X-DBUS-ServiceName=io.github.ramanenka.kamora
+X-DBUS-ServiceName=@KAMORA_APP_ID@
 X-DBUS-StartupType=Unique
 X-GNOME-UsesNotifications=true

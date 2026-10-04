@@ -8,8 +8,8 @@
  * Settings that belong to Kamora itself rather than to any one backup
  * configuration.
  *
- * They live in the [General] group of kamorarc, next to the [Backups] groups
- * the individual configurations use.
+ * They live in the [General] group of the configuration file, next to the
+ * [Backups] groups the individual configurations use.
  */
 class AppSettings : public QObject
 {
@@ -17,9 +17,12 @@ class AppSettings : public QObject
 
     Q_PROPERTY(bool autostart READ autostart WRITE setAutostart NOTIFY changed)
     Q_PROPERTY(bool startInBackground READ startInBackground WRITE setStartInBackground NOTIFY changed)
+    Q_PROPERTY(QString autostartFile READ autostartFile CONSTANT)
 
 public:
     explicit AppSettings(KSharedConfig::Ptr config, QObject *parent = nullptr);
+
+    QString autostartFile() const;
 
     /// Whether Kamora is launched at login.
     bool autostart() const;
@@ -35,7 +38,7 @@ Q_SIGNALS:
 private:
     void load();
     void save();
-    /// Writes or removes ~/.config/autostart/io.github.ramanenka.kamora.desktop.
+    /// Writes or removes autostartFile().
     void applyAutostart() const;
 
     KSharedConfig::Ptr m_config;
