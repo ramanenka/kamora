@@ -22,7 +22,6 @@ find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS
     Quick
     QuickControls2
     Qml
-    DBus
 )
 
 find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS
@@ -80,7 +79,6 @@ target_link_libraries(kamora PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::Qml
-    Qt6::DBus
     KF6::CoreAddons
     KF6::ConfigCore
     KF6::I18n
