@@ -1,5 +1,5 @@
 Name:           kamora
-Version:        0.1
+Version:        0
 Release:        1%{?dist}
 Summary:        Scheduled borg backups to a USB drive
 
@@ -39,7 +39,7 @@ up, and runs the backup if one is due.
 %autosetup
 
 %build
-%cmake -GNinja -DKAMORA_DEV=OFF
+%cmake -GNinja -DKAMORA_DEV=OFF -DKAMORA_VERSION=%{version}
 %cmake_build
 
 %install
@@ -55,5 +55,3 @@ up, and runs the backup if one is due.
 %{_datadir}/icons/hicolor/22x22/status/io.github.ramanenka.kamora-tray*.svg
 
 %changelog
-* Sat Oct 04 2026 Vadzim Ramanenka <vramanenka@gmail.com> - 0.1-1
-- First package

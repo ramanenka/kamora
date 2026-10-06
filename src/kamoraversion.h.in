@@ -1,0 +1,3 @@
+#pragma once
+
+#define KAMORA_VERSION "@KAMORA_VERSION@"

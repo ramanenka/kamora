@@ -1,5 +1,7 @@
 # Kamora Backup
 
+[![Copr build status](https://copr.fedorainfracloud.org/coprs/ramanenka/kamora/package/kamora/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/ramanenka/kamora/package/kamora/)
+
 A Kirigami app that keeps a [borg](https://borgbackup.org) repository on a USB
 drive up to date.
 
@@ -96,15 +98,37 @@ desktop entry and notifyrc are installed.
 
 ### Release
 
+Releases are published to the
+[ramanenka/kamora](https://copr.fedorainfracloud.org/coprs/ramanenka/kamora/)
+COPR repository:
+
+```
+sudo dnf copr enable ramanenka/kamora
+sudo dnf install kamora
+```
+
+after which `dnf upgrade` brings each new release.
+
+To cut one, run `packaging/release.sh` on a clean, pushed `main`. It takes the
+latest `vX.Y` tag, tags HEAD with the next minor version (`v0.1` when there is
+none yet) and pushes the tag. GitHub tells COPR through a webhook, and COPR
+runs `.copr/Makefile` on the tagged checkout to build the source package and
+then the RPMs. The version comes from the tag alone: the spec carries a
+placeholder, and the changelog entry lists the commits since the previous tag.
+
+To build the package locally instead:
+
 ```
 sudo dnf install rpm-build
 packaging/build-rpm.sh
-sudo dnf install ~/rpmbuild/RPMS/x86_64/kamora-0.1-1.*.rpm
+sudo dnf install ~/rpmbuild/RPMS/x86_64/kamora-*.rpm
 ```
 
 `packaging/build-rpm.sh` packages what is committed rather than the working
-tree, since it takes its tarball from `git archive`. To install a release build
-without the detour through a package:
+tree, since it takes its tarball from `git archive`. On a release tag the
+package gets that version; anywhere else a snapshot one such as `0.1^3.gabc1234`,
+which sorts after `0.1` and before `0.2`. To install a release build without
+the detour through a package:
 
 ```
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -160,7 +184,8 @@ to run one.
 | `src/qml/` | the Kirigami interface |
 | `data/` | desktop entry, application icons and notification definitions |
 | `cmake/` | the dev flavour's icons, drawn from the release ones |
-| `packaging/` | the RPM spec for the release flavour, and a script to build it |
+| `packaging/` | the RPM spec for the release flavour, a script to build it and one to cut a release |
+| `.copr/` | the hook COPR calls to build the source package from a release tag |
 
 ## Notes
 

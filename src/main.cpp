@@ -16,6 +16,7 @@
 #include "borgrunner.h"
 #include "drivemonitor.h"
 #include "kamoraconfig.h"
+#include "kamoraversion.h"
 
 using namespace Qt::StringLiterals;
 
@@ -36,7 +37,7 @@ int main(int argc, char *argv[])
 
     KAboutData about(QString::fromLatin1(KAMORA_BINARY_NAME),
                      i18n("Kamora Backup"),
-                     u"0.1"_s,
+                     QString::fromLatin1(KAMORA_VERSION),
                      i18n("Scheduled borg backups to a USB drive"),
                      KAboutLicense::GPL_V3);
     about.setDesktopFileName(QString::fromLatin1(KAMORA_APP_ID));

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(kamora VERSION 0.1 LANGUAGES CXX)
+project(kamora LANGUAGES CXX)
+
+set(KAMORA_VERSION "" CACHE STRING "Version the application reports; taken from git describe on every build when empty")
 
 option(KAMORA_DEV "Build the development flavour, installable beside a release build" OFF)
 
@@ -62,6 +64,20 @@ configure_file(src/kamoraconfig.h.in ${CMAKE_CURRENT_BINARY_DIR}/kamoraconfig.h 
 add_executable(kamora)
 set_target_properties(kamora PROPERTIES OUTPUT_NAME ${KAMORA_BINARY_NAME})
 target_include_directories(kamora PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
+if(KAMORA_VERSION)
+    configure_file(src/kamoraversion.h.in ${CMAKE_CURRENT_BINARY_DIR}/kamoraversion.h @ONLY)
+else()
+    add_custom_target(kamora_version
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/src/kamoraversion.h.in
+            -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/kamoraversion.h
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/KamoraVersion.cmake
+        BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/kamoraversion.h
+    )
+    add_dependencies(kamora kamora_version)
+endif()
 
 target_sources(kamora PRIVATE
     src/main.cpp
