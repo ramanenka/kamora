@@ -232,9 +232,7 @@ Kirigami.ScrollablePage {
                 case BackupPlan.RepositoryOther:
                     return "a different repository than this plan was set up with";
                 case BackupPlan.RepositoryEncrypted:
-                    return page.plan.repositoryEncryption.length > 0
-                        ? "encrypted (" + page.plan.repositoryEncryption + ")"
-                        : "encrypted";
+                    return "encrypted";
                 case BackupPlan.RepositoryUnusable:
                     return "cannot be read";
                 case BackupPlan.RepositoryDriveAway:

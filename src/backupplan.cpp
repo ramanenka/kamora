@@ -325,11 +325,6 @@ BackupPlan::RepositoryState BackupPlan::repositoryState() const
     return m_repoState;
 }
 
-QString BackupPlan::repositoryEncryption() const
-{
-    return m_repoEncryption;
-}
-
 QString BackupPlan::repositoryProblem() const
 {
     return m_repoProblem;
@@ -359,7 +354,6 @@ void BackupPlan::checkRepository()
         return;
     }
 
-    m_repoEncryption.clear();
     m_repoProblem.clear();
 
     if (!borgAvailable()) {
@@ -392,14 +386,8 @@ void BackupPlan::onRepositoryChecked(int exitCode, QProcess::ExitStatus status)
     // borg uses exit code 1 for warnings, which still leave usable output.
     if (status == QProcess::NormalExit && exitCode <= 1) {
         const QJsonObject root = QJsonDocument::fromJson(output).object();
-        const QString mode = root.value(u"encryption"_s).toObject().value(u"mode"_s).toString();
         const QString id = root.value(u"repository"_s).toObject().value(u"id"_s).toString();
 
-        if (!mode.isEmpty() && mode != u"none"_s) {
-            m_repoEncryption = mode;
-            setRepositoryState(RepositoryEncrypted);
-            return;
-        }
         if (id.isEmpty()) {
             m_repoProblem = i18n("borg did not report an id for the repository");
             setRepositoryState(RepositoryUnusable);
@@ -423,10 +411,6 @@ void BackupPlan::onRepositoryChecked(int exitCode, QProcess::ExitStatus status)
     }
 
     if (failureMeansEncrypted(failure.msgid)) {
-        // borg only names the mode once it can actually open the repository, so
-        // the mode stays unknown here. Guessing it from the error would get
-        // "authenticated" wrong, and borg's own wording talks about a
-        // passphrase Kamora supplied rather than anything the user did.
         setRepositoryState(RepositoryEncrypted);
         return;
     }
@@ -465,7 +449,6 @@ void BackupPlan::createRepository()
     }
 
     m_creatingRepository = true;
-    m_repoEncryption.clear();
     m_repoProblem.clear();
     setRepositoryState(RepositoryCreating);
     appendLog(i18n("Creating a repository at %1", repository));

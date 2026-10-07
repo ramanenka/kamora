@@ -38,7 +38,6 @@ class BackupPlan : public QObject
     Q_PROPERTY(QString repositoryPath READ repositoryPath NOTIFY statusChanged)
     Q_PROPERTY(bool repositoryExists READ repositoryExists NOTIFY statusChanged)
     Q_PROPERTY(RepositoryState repositoryState READ repositoryState NOTIFY repositoryChanged)
-    Q_PROPERTY(QString repositoryEncryption READ repositoryEncryption NOTIFY repositoryChanged)
     Q_PROPERTY(QString repositoryProblem READ repositoryProblem NOTIFY repositoryChanged)
     Q_PROPERTY(bool repositoryBusy READ repositoryBusy NOTIFY repositoryChanged)
     Q_PROPERTY(QUrl browseStartFolder READ browseStartFolder NOTIFY statusChanged)
@@ -100,8 +99,6 @@ public:
     /// Whether a borg repository is already present on the mounted drive.
     bool repositoryExists() const;
     RepositoryState repositoryState() const;
-    /// borg's name for the encryption mode, set only in the Encrypted state.
-    QString repositoryEncryption() const;
     /// What borg said when it refused the repository, for the Unusable state.
     QString repositoryProblem() const;
     /// True while the repository is being looked at or created.
@@ -187,7 +184,6 @@ private:
     /// Runs the borg list of checkRepository() and the borg init of createRepository().
     QProcess m_repoProcess;
     RepositoryState m_repoState = RepositoryUnknown;
-    QString m_repoEncryption;
     QString m_repoProblem;
     bool m_creatingRepository = false;
     QStringList m_log;
