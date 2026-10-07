@@ -53,6 +53,7 @@ find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS
     StatusNotifierItem
     DBusAddons
     Solid
+    JobWidgets
 )
 
 set(CMAKE_CXX_STANDARD 20)
@@ -89,6 +90,8 @@ target_sources(kamora PRIVATE
     src/backupcontroller.h
     src/backupplan.cpp
     src/backupplan.h
+    src/progressnotification.cpp
+    src/progressnotification.h
     src/borgrunner.cpp
     src/borgrunner.h
     src/drivemonitor.cpp
@@ -124,6 +127,7 @@ target_link_libraries(kamora PRIVATE
     KF6::StatusNotifierItem
     KF6::DBusAddons
     KF6::Solid
+    KF6::JobWidgets
 )
 
 ecm_finalize_qml_module(kamora)

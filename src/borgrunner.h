@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QJsonObject>
 #include <QObject>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -11,6 +12,7 @@ struct BorgStep {
     QStringList args;
     /// borg prints a JSON summary on stdout for this step (borg create --json).
     bool jsonSummary = false;
+    bool estimatesSize = false;
 };
 
 /**
@@ -21,7 +23,7 @@ class BorgRunner : public QObject
     Q_OBJECT
 
     Q_PROPERTY(bool running READ running NOTIFY runningChanged)
-    Q_PROPERTY(QString stepLabel READ stepLabel NOTIFY progressChanged)
+    Q_PROPERTY(QString stepLabel READ stepLabel NOTIFY stepLabelChanged)
     Q_PROPERTY(QString progressText READ progressText NOTIFY progressChanged)
     Q_PROPERTY(qreal progress READ progress NOTIFY progressChanged)
 
@@ -29,6 +31,7 @@ public:
     explicit BorgRunner(QObject *parent = nullptr);
 
     bool running() const;
+    bool cancelled() const;
     QString stepLabel() const;
     QString progressText() const;
     /// Fraction between 0 and 1, or -1 while the total is unknown.
@@ -54,12 +57,17 @@ Q_SIGNALS:
     void progressChanged();
     void logLine(const QString &line);
     void finished(bool ok, const QString &message, const QString &archiveName);
+    void estimateProgress(qint64 bytes, qint64 files);
+    void archiveProgress(qint64 bytes, qint64 newBytes, qint64 files, const QString &path);
+    void stepLabelChanged(const QString &label);
+    void percentProgress(qint64 current, qint64 total);
 
 private:
     void runNext();
     void readStandardError();
     void readStandardOutput();
     void handleJsonLine(const QByteArray &line);
+    void addToEstimate(const QJsonObject &status);
     void stepFinished(int exitCode, QProcess::ExitStatus status);
     void finishRun(bool ok, const QString &message);
     void setProgress(const QString &text, qreal value);
@@ -73,6 +81,9 @@ private:
     QString m_progressText;
     qreal m_progress = -1;
     QString m_archiveName;
+    qint64 m_expectedBytes = 0;
+    qint64 m_estimateBytes = 0;
+    qint64 m_estimateFiles = 0;
     QString m_lastError;
     bool m_sawWarning = false;
     bool m_cancelled = false;

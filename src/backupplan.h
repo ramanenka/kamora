@@ -2,6 +2,7 @@
 
 #include <QDateTime>
 #include <QObject>
+#include <QPointer>
 #include <QProcess>
 #include <QUrl>
 #include <QVariantList>
@@ -9,6 +10,8 @@
 #include "backupconfig.h"
 #include "borgrunner.h"
 #include "drivemonitor.h"
+
+class ProgressNotification;
 
 /**
  * One backup configuration at work: it knows when its backup is due, watches
@@ -180,6 +183,7 @@ private:
     BackupConfig *m_config;
     DriveMonitor *m_driveMonitor;
     BorgRunner *m_runner;
+    QPointer<ProgressNotification> m_progressNotification;
     QProcess m_listProcess;
     /// Runs the borg list of checkRepository() and the borg init of createRepository().
     QProcess m_repoProcess;

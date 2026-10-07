@@ -1,5 +1,6 @@
 #include "borgrunner.h"
 
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
@@ -75,6 +76,11 @@ bool BorgRunner::running() const
     return m_running;
 }
 
+bool BorgRunner::cancelled() const
+{
+    return m_cancelled;
+}
+
 QString BorgRunner::stepLabel() const
 {
     return m_stepLabel;
@@ -108,6 +114,7 @@ void BorgRunner::run(const QList<BorgStep> &steps, const QProcessEnvironment &en
     m_steps = steps;
     m_currentStep = -1;
     m_archiveName.clear();
+    m_expectedBytes = 0;
     m_lastError.clear();
     m_sawWarning = false;
     m_cancelled = false;
@@ -129,7 +136,10 @@ void BorgRunner::runNext()
     m_stepLabel = step.label;
     m_stdoutBuffer.clear();
     m_stderrBuffer.clear();
+    m_estimateBytes = 0;
+    m_estimateFiles = 0;
     setProgress(step.label, -1);
+    Q_EMIT stepLabelChanged(m_stepLabel);
 
     const QString borg = borgExecutable();
     Q_EMIT logLine(u"$ borg "_s + step.args.join(u' '));
@@ -154,6 +164,7 @@ void BorgRunner::finishRun(bool ok, const QString &message)
 {
     m_running = false;
     m_stepLabel.clear();
+    Q_EMIT stepLabelChanged(m_stepLabel);
     setProgress(QString(), -1);
     // finished() goes out before runningChanged() so that whoever records the
     // result has done so by the time anything reacts to the runner idling -
@@ -192,14 +203,22 @@ void BorgRunner::handleJsonLine(const QByteArray &line)
     const QJsonObject object = document.object();
     const QString type = object.value(u"type"_s).toString();
 
+    if (type == u"file_status"_s && m_steps.value(m_currentStep).estimatesSize) {
+        addToEstimate(object);
+        return;
+    }
+
     if (type == u"archive_progress"_s) {
         if (object.value(u"finished"_s).toBool()) {
             return;
         }
         const qint64 original = static_cast<qint64>(object.value(u"original_size"_s).toDouble());
         const qint64 deduplicated = static_cast<qint64>(object.value(u"deduplicated_size"_s).toDouble());
-        const int files = object.value(u"nfiles"_s).toInt();
-        const QString path = object.value(u"path"_s).toString();
+        const qint64 files = static_cast<qint64>(object.value(u"nfiles"_s).toDouble());
+        QString path = object.value(u"path"_s).toString();
+        if (!path.isEmpty() && !path.startsWith(u'/')) {
+            path.prepend(u'/');
+        }
         const QLocale locale;
         setProgress(i18nc("@info:progress read / stored / file count",
                           "%1 read, %2 new, %3 files — %4",
@@ -207,7 +226,8 @@ void BorgRunner::handleJsonLine(const QByteArray &line)
                           locale.formattedDataSize(deduplicated),
                           QString::number(files),
                           path),
-                    -1);
+                    m_expectedBytes > 0 ? qBound(0.0, double(original) / double(m_expectedBytes), 0.99) : -1);
+        Q_EMIT archiveProgress(original, deduplicated, files, path);
         return;
     }
 
@@ -221,6 +241,7 @@ void BorgRunner::handleJsonLine(const QByteArray &line)
         }
         setProgress(message.isEmpty() ? m_stepLabel : message,
                     total > 0 ? qBound(0.0, current / total, 1.0) : -1);
+        Q_EMIT percentProgress(static_cast<qint64>(current), static_cast<qint64>(total));
         return;
     }
 
@@ -245,6 +266,27 @@ void BorgRunner::handleJsonLine(const QByteArray &line)
     }
 
     Q_EMIT logLine(QString::fromUtf8(line));
+}
+
+void BorgRunner::addToEstimate(const QJsonObject &status)
+{
+    if (status.value(u"status"_s).toString() == u"x"_s) {
+        return;
+    }
+    const QFileInfo info(status.value(u"path"_s).toString());
+    if (info.isSymLink() || !info.isFile()) {
+        return;
+    }
+    m_estimateBytes += info.size();
+    ++m_estimateFiles;
+    if (m_estimateFiles % 500 == 0) {
+        setProgress(i18nc("@info:progress file count / total size",
+                          "%1 files, %2",
+                          QString::number(m_estimateFiles),
+                          QLocale().formattedDataSize(m_estimateBytes)),
+                    -1);
+        Q_EMIT estimateProgress(m_estimateBytes, m_estimateFiles);
+    }
 }
 
 void BorgRunner::stepFinished(int exitCode, QProcess::ExitStatus status)
@@ -280,6 +322,12 @@ void BorgRunner::stepFinished(int exitCode, QProcess::ExitStatus status)
     }
     if (exitCode == 1) {
         m_sawWarning = true;
+    }
+
+    const BorgStep &step = m_steps.at(m_currentStep);
+    if (step.estimatesSize) {
+        m_expectedBytes = m_estimateBytes;
+        Q_EMIT estimateProgress(m_estimateBytes, m_estimateFiles);
     }
 
     runNext();

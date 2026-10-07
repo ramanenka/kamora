@@ -20,6 +20,7 @@ BuildRequires:  kf6-kdbusaddons-devel
 BuildRequires:  kf6-ki18n-devel
 BuildRequires:  kf6-kiconthemes-devel
 BuildRequires:  kf6-kirigami-devel
+BuildRequires:  kf6-kjobwidgets-devel
 BuildRequires:  kf6-knotifications-devel
 BuildRequires:  kf6-kstatusnotifieritem-devel
 BuildRequires:  kf6-solid-devel

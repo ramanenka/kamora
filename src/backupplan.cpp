@@ -1,4 +1,5 @@
 #include "backupplan.h"
+#include "progressnotification.h"
 
 #include <QDesktopServices>
 #include <QDir>
@@ -200,6 +201,29 @@ BackupPlan::BackupPlan(BackupConfig *config, QObject *parent)
     connect(m_runner, &BorgRunner::finished, this, &BackupPlan::onRunFinished);
     connect(m_runner, &BorgRunner::runningChanged, this, &BackupPlan::evaluate);
     connect(m_runner, &BorgRunner::progressChanged, this, &BackupPlan::statusChanged);
+    connect(m_runner, &BorgRunner::estimateProgress, this, [this](qint64 bytes, qint64 files) {
+        if (m_progressNotification) {
+            m_progressNotification->showEstimate(bytes, files);
+        }
+    });
+    connect(m_runner,
+            &BorgRunner::archiveProgress,
+            this,
+            [this](qint64 bytes, qint64 newBytes, qint64 files, const QString &path) {
+                if (m_progressNotification) {
+                    m_progressNotification->showProgress(bytes, newBytes, files, path);
+                }
+            });
+    connect(m_runner, &BorgRunner::stepLabelChanged, this, [this](const QString &label) {
+        if (m_progressNotification && !label.isEmpty()) {
+            m_progressNotification->showStep(label);
+        }
+    });
+    connect(m_runner, &BorgRunner::percentProgress, this, [this](qint64 current, qint64 total) {
+        if (m_progressNotification) {
+            m_progressNotification->showPercent(current, total);
+        }
+    });
 
     connect(&m_repoProcess, &QProcess::finished, this,
             [this](int exitCode, QProcess::ExitStatus status) {
@@ -735,22 +759,29 @@ void BackupPlan::beginBackup()
 
     QList<BorgStep> steps;
 
+    QStringList sourceArgs{u"--exclude-caches"_s};
+    const auto excludes = m_config->excludePatterns();
+    for (const QString &pattern : excludes) {
+        sourceArgs << u"--exclude"_s << pattern;
+    }
+    sourceArgs << repository + u"::{hostname}-{now:%Y-%m-%d_%H-%M-%S}"_s;
+    sourceArgs << m_config->includePaths();
+
+    steps.append(BorgStep{i18n("Counting files"),
+                          QStringList{u"create"_s, u"--dry-run"_s, u"--list"_s, u"--log-json"_s} + sourceArgs,
+                          false,
+                          true});
+
     QStringList createArgs{
         u"create"_s,
         u"--json"_s,
         u"--log-json"_s,
         u"--progress"_s,
         u"--stats"_s,
-        u"--exclude-caches"_s,
         u"--compression"_s,
         m_config->compression(),
     };
-    const auto excludes = m_config->excludePatterns();
-    for (const QString &pattern : excludes) {
-        createArgs << u"--exclude"_s << pattern;
-    }
-    createArgs << repository + u"::{hostname}-{now:%Y-%m-%d_%H-%M-%S}"_s;
-    createArgs << m_config->includePaths();
+    createArgs << sourceArgs;
     steps.append(BorgStep{i18n("Creating the archive"), createArgs, true});
 
     if (m_config->keepDaily() > 0 || m_config->keepWeekly() > 0 || m_config->keepMonthly() > 0) {
@@ -772,6 +803,8 @@ void BackupPlan::beginBackup()
     }
 
     appendLog(i18n("Backing up to %1", repository));
+    m_progressNotification =
+        new ProgressNotification(i18n("Backing up %1", m_config->displayName()), this);
     m_runner->run(steps, environment);
     Q_EMIT statusChanged();
 }
@@ -791,6 +824,9 @@ void BackupPlan::cancel()
 
 void BackupPlan::onRunFinished(bool ok, const QString &text, const QString &archiveName)
 {
+    if (m_progressNotification) {
+        m_progressNotification->finish(ok, m_runner->cancelled(), text, archiveName);
+    }
     appendLog(text);
     m_config->recordRun(ok ? u"ok"_s : u"failed"_s, archiveName, ok ? QString() : text);
 
@@ -804,12 +840,6 @@ void BackupPlan::onRunFinished(bool ok, const QString &text, const QString &arch
         }
     }
 
-    if (ok) {
-        notify(u"backupFinished"_s, i18n("Backup finished"),
-               archiveName.isEmpty() ? text : i18n("Created archive %1", archiveName));
-    } else {
-        notify(u"backupFailed"_s, i18n("Backup failed"), text);
-    }
     Q_EMIT message(text, !ok);
 
     // The drive stays until the archive list has been read back off it.

@@ -32,6 +32,15 @@ than about one backup - whether it starts at login - live under **Settings**.
 * **Backups** — `borg create` with the configured compression and exclusions,
   then `borg prune` and `borg compact` for the retention you asked for. Progress
   comes from borg's `--log-json` stream. The repository is created on first use.
+* **Progress notification** — a backup run shows in Plasma as a job, from the
+  first borg command to the last. While `borg create` runs it names the file
+  being read and how much of it is new; before that a dry run
+  (`borg create --dry-run --list`) lists what would be backed up, and Kamora adds
+  up the sizes into the total the percentage is measured against. Pruning and
+  compacting follow with progress of their own. The notification has no pause
+  or cancel button, and when the run ends it becomes the one that says the
+  backup finished, with the archive it made, or failed, with what went wrong. A
+  cancelled run leaves no notification behind.
 * **One at a time** — while a backup is running no other one can start, so two
   never compete for the same disk, or for the same borg lock when they share a
   drive. Every other configuration's *Back up now* rests until it is done; one
@@ -69,7 +78,7 @@ sudo dnf install gcc-c++ cmake ninja-build extra-cmake-modules \
     kf6-kirigami-devel kf6-kirigami-addons-devel kf6-kcoreaddons-devel \
     kf6-ki18n-devel kf6-kconfig-devel kf6-kiconthemes-devel \
     kf6-kstatusnotifieritem-devel kf6-knotifications-devel \
-    kf6-kdbusaddons-devel kf6-solid-devel \
+    kf6-kdbusaddons-devel kf6-solid-devel kf6-kjobwidgets-devel \
     borgbackup
 ```
 
