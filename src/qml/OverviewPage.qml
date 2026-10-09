@@ -133,12 +133,14 @@ Kirigami.ScrollablePage {
                         }
 
                         QQC2.Button {
-                            text: card.plan.active ? "Cancel" : "Back up now"
+                            text: card.plan.runner.cancelling ? "Cancelling…"
+                                : card.plan.active ? "Cancel" : "Back up now"
                             icon.name: card.plan.active ? "dialog-cancel" : "backup"
                             // Only one backup runs at a time, so every other
                             // card's button rests while one is going.
-                            enabled: card.plan.active
-                                || (!Kamora.anyRunning && card.plan.canBackupNow)
+                            enabled: !card.plan.runner.cancelling
+                                && (card.plan.active
+                                    || (!Kamora.anyRunning && card.plan.canBackupNow))
                             onClicked: card.plan.active
                                 ? card.plan.cancel()
                                 : card.plan.requestStart()

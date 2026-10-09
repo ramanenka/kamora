@@ -64,6 +64,14 @@ BorgRunner::BorgRunner(QObject *parent)
             m_lastError = i18n("borg could not be started");
         }
     });
+
+    m_killTimer.setSingleShot(true);
+    m_killTimer.setInterval(5000);
+    connect(&m_killTimer, &QTimer::timeout, this, [this] {
+        if (m_process.state() != QProcess::NotRunning) {
+            m_process.kill();
+        }
+    });
 }
 
 QString BorgRunner::borgExecutable()
@@ -79,6 +87,11 @@ bool BorgRunner::running() const
 bool BorgRunner::cancelled() const
 {
     return m_cancelled;
+}
+
+bool BorgRunner::cancelling() const
+{
+    return m_cancelling;
 }
 
 QString BorgRunner::stepLabel() const
@@ -148,21 +161,26 @@ void BorgRunner::runNext()
 
 void BorgRunner::cancel()
 {
-    if (!m_running) {
+    if (!m_running || m_cancelling) {
         return;
     }
     m_cancelled = true;
+    m_cancelling = true;
+    Q_EMIT cancellingChanged();
     m_steps.clear();
     Q_EMIT logLine(i18n("Cancelling…"));
     m_process.terminate();
-    if (!m_process.waitForFinished(5000)) {
-        m_process.kill();
-    }
+    m_killTimer.start();
 }
 
 void BorgRunner::finishRun(bool ok, const QString &message)
 {
+    m_killTimer.stop();
     m_running = false;
+    if (m_cancelling) {
+        m_cancelling = false;
+        Q_EMIT cancellingChanged();
+    }
     m_stepLabel.clear();
     Q_EMIT stepLabelChanged(m_stepLabel);
     setProgress(QString(), -1);

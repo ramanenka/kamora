@@ -20,9 +20,11 @@ Kirigami.ScrollablePage {
 
     actions: [
         Kirigami.Action {
-            text: page.plan.active ? "Cancel" : "Back up now"
+            text: page.plan.runner.cancelling ? "Cancelling…"
+                : page.plan.active ? "Cancel" : "Back up now"
             icon.name: page.plan.active ? "dialog-cancel" : "backup"
-            enabled: page.plan.active || (!Kamora.anyRunning && page.plan.canBackupNow)
+            enabled: !page.plan.runner.cancelling
+                && (page.plan.active || (!Kamora.anyRunning && page.plan.canBackupNow))
             onTriggered: page.plan.active
                 ? page.plan.cancel()
                 : page.plan.requestStart()

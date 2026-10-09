@@ -5,6 +5,7 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QStringList>
+#include <QTimer>
 
 /// One borg invocation inside a backup run.
 struct BorgStep {
@@ -23,6 +24,7 @@ class BorgRunner : public QObject
     Q_OBJECT
 
     Q_PROPERTY(bool running READ running NOTIFY runningChanged)
+    Q_PROPERTY(bool cancelling READ cancelling NOTIFY cancellingChanged)
     Q_PROPERTY(QString stepLabel READ stepLabel NOTIFY stepLabelChanged)
     Q_PROPERTY(QString progressText READ progressText NOTIFY progressChanged)
     Q_PROPERTY(qreal progress READ progress NOTIFY progressChanged)
@@ -32,6 +34,7 @@ public:
 
     bool running() const;
     bool cancelled() const;
+    bool cancelling() const;
     QString stepLabel() const;
     QString progressText() const;
     /// Fraction between 0 and 1, or -1 while the total is unknown.
@@ -54,6 +57,7 @@ public:
 
 Q_SIGNALS:
     void runningChanged();
+    void cancellingChanged();
     void progressChanged();
     void logLine(const QString &line);
     void finished(bool ok, const QString &message, const QString &archiveName);
@@ -73,6 +77,7 @@ private:
     void setProgress(const QString &text, qreal value);
 
     QProcess m_process;
+    QTimer m_killTimer;
     QList<BorgStep> m_steps;
     int m_currentStep = -1;
     QByteArray m_stderrBuffer;
@@ -87,5 +92,6 @@ private:
     QString m_lastError;
     bool m_sawWarning = false;
     bool m_cancelled = false;
+    bool m_cancelling = false;
     bool m_running = false;
 };
