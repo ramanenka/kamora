@@ -1,6 +1,7 @@
 #include "backupcontroller.h"
 
 #include <QCoreApplication>
+#include <QUuid>
 #include <QWindow>
 
 #include <KConfigGroup>
@@ -25,12 +26,10 @@ BackupController::BackupController(QObject *parent)
         // no group to go with it. There is nothing in it to keep.
         if (!backups.hasGroup(id)) {
             healed = true;
-            m_nextId = qMax(m_nextId, id.toInt() + 1);
             continue;
         }
         BackupPlan *plan = createPlan(id);
         m_plans.append(plan);
-        m_nextId = qMax(m_nextId, id.toInt() + 1);
     }
     if (healed) {
         savePlanList();
@@ -185,8 +184,7 @@ QString BackupController::summary() const
 
 BackupPlan *BackupController::addPlan()
 {
-    const QString id = QString::number(m_nextId++);
-    BackupPlan *plan = createPlan(id);
+    BackupPlan *plan = createPlan(QUuid::createUuid().toString(QUuid::WithoutBraces));
     m_plans.append(plan);
     Q_EMIT plansChanged();
     evaluate();

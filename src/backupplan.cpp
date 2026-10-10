@@ -764,7 +764,8 @@ void BackupPlan::beginBackup()
     for (const QString &pattern : excludes) {
         sourceArgs << u"--exclude"_s << pattern;
     }
-    sourceArgs << repository + u"::{hostname}-{now:%Y-%m-%d_%H-%M-%S}"_s;
+    const QString archivePrefix = m_config->id().left(8) + u'-';
+    sourceArgs << repository + u"::"_s + archivePrefix + u"{now:%Y%m%d%H%M%S}"_s;
     sourceArgs << m_config->includePaths();
 
     steps.append(BorgStep{i18n("Counting files"),
@@ -795,6 +796,7 @@ void BackupPlan::beginBackup()
         if (m_config->keepMonthly() > 0) {
             pruneArgs << u"--keep-monthly"_s << QString::number(m_config->keepMonthly());
         }
+        pruneArgs << u"--glob-archives"_s << archivePrefix + u'*';
         pruneArgs << repository;
         steps.append(BorgStep{i18n("Removing old archives"), pruneArgs, false});
         steps.append(BorgStep{i18n("Compacting the repository"),

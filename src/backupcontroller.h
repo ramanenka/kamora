@@ -82,5 +82,4 @@ private:
     QList<BackupPlan *> m_plans;
     QTimer m_tick;
     QWindow *m_window = nullptr;
-    int m_nextId = 1;
 };
