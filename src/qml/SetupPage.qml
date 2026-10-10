@@ -480,7 +480,7 @@ Kirigami.ScrollablePage {
         QQC2.Label {
             Layout.fillWidth: true
             Layout.maximumWidth: page.fieldWidth
-            text: "Older archives are pruned after every backup."
+            text: "Older archives are pruned after every backup. Only archives made by this plan are pruned."
             opacity: 0.7
             wrapMode: Text.Wrap
         }
